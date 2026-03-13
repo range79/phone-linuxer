@@ -64,16 +64,12 @@ fun MainScreen(vm: LinuxViewModel) {
         Spacer(modifier = Modifier.height(32.dp))
 
         LinearProgressIndicator(
-            progress = { progress / 100f },
+            progress = progress / 100f,
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text("Progress: $progress%")
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text("Status: $status")
+        Text("Status: $status ($progress%)")
     }
 }
