@@ -5,29 +5,42 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.contentLength
-import io.ktor.utils.io.jvm.javaio.toInputStream
-import io.ktor.utils.io.readAvailable
+import io.ktor.utils.io.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.BufferedOutputStream
 
 class LinuxRepositoryImpl(
     private val context: Context,
     private val folderUri: Uri
 ) : LinuxRepository {
 
-    private val client = HttpClient(CIO)
+    private val client = HttpClient(CIO) {
+        install(HttpTimeout) {
+            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            socketTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            connectTimeoutMillis = 60000
+        }
+
+        install(Logging) {
+            level = LogLevel.INFO
+        }
+    }
 
     override suspend fun downloadLinux(url: String, onProgress: (Int) -> Unit) {
-        try {
 
+        try {
             Timber.i("Download started: $url")
 
             val pickedDir = DocumentFile.fromTreeUri(context, folderUri)
                 ?: throw Exception("Folder URI invalid")
-
-            Timber.i("Selected folder: $folderUri")
 
             val fileName = url.substringAfterLast("/")
             val newFile = pickedDir.createFile("application/octet-stream", fileName)
@@ -35,48 +48,53 @@ class LinuxRepositoryImpl(
 
             Timber.i("File created: ${newFile.uri}")
 
-            val outputStream = context.contentResolver.openOutputStream(newFile.uri)
-                ?: throw Exception("Cannot open output stream")
+            withContext(Dispatchers.IO) {
 
-            val response = client.get(url)
+                context.contentResolver.openOutputStream(newFile.uri)?.use { rawOutput ->
 
-            val total = response.contentLength() ?: -1L
-            Timber.i("Total size: $total")
+                    BufferedOutputStream(rawOutput).use { output ->
 
-            val channel = response.bodyAsChannel()
+                        client.prepareGet(url).execute { response ->
 
-            var bytesCopied = 0L
-            var lastProgress = 0
+                            val totalBytes = response.contentLength() ?: -1L
+                            Timber.i("Total size: $totalBytes")
 
-            outputStream.use { output ->
+                            val channel: ByteReadChannel = response.bodyAsChannel()
 
-                val buffer = ByteArray(8192)
+                            val buffer = ByteArray(64 * 1024)
+                            var bytesCopied = 0L
+                            var lastProgress = 0
 
-                while (!channel.isClosedForRead) {
+                            while (!channel.isClosedForRead) {
 
-                    val read = channel.readAvailable(buffer)
+                                val read = channel.readAvailable(buffer)
 
-                    if (read == -1) break
+                                if (read <= 0) continue
 
-                    output.write(buffer, 0, read)
-                    bytesCopied += read
+                                output.write(buffer, 0, read)
 
-                    if (total > 0) {
+                                bytesCopied += read
 
-                        val progress = ((bytesCopied * 100) / total).toInt()
+                                if (totalBytes > 0) {
 
-                        if (progress != lastProgress) {
-                            lastProgress = progress
-                            onProgress(progress)
+                                    val progress =
+                                        ((bytesCopied * 100) / totalBytes).toInt()
 
-                            Timber.i("Download progress: $progress%")
+                                    if (progress - lastProgress >= 5) {
+                                        lastProgress = progress
+                                        onProgress(progress)
+                                        Timber.i("Download progress: $progress%")
+                                    }
+                                }
+                            }
+
+                            output.flush()
                         }
                     }
                 }
             }
 
             Timber.i("Download finished")
-
             onProgress(100)
 
         } catch (e: Exception) {
@@ -84,4 +102,5 @@ class LinuxRepositoryImpl(
             Timber.e(e, "Download failed")
             onProgress(-1)
         }
-    }}
+    }
+}
