@@ -64,12 +64,16 @@ fun MainScreen(vm: LinuxViewModel) {
         Spacer(modifier = Modifier.height(32.dp))
 
         LinearProgressIndicator(
-            progress = progress / 100f,
+            { progress / 100f},
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        if (progress==-1){
+           Text("Status: Download Failed")
+        }else
+        {
         Text("Status: $status ($progress%)")
-    }
+    }}
 }
