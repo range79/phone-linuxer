@@ -32,33 +32,42 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadArch() {
-        val repository = repo ?: return
-        viewModelScope.launch {
-            _isDownloading.value = true
-            _downloadStatus.value = "Downloading Arch ARM..."
-            repository.downloadLinux(
-                "https://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
-            ) { progress ->
-                _downloadProgress.value = progress
-                if (progress == 100) {
-                    _downloadStatus.value = "Download finished"
-                    _isDownloading.value = false
-                }
-            }
-        }
+        startDownload(
+            "Arch Linux ARM",
+            "https://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+        )
     }
+
     fun downloadUbuntu() {
-        val repository = repo ?: return
+        startDownload(
+            "Ubuntu 24.04 ARM64",
+            "https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/noble-live-server-arm64.iso"
+        )
+    }
+
+    private fun startDownload(label: String, url: String) {
+        val repository = repo ?: run {
+            _downloadStatus.value = "Error: Select folder first"
+            return
+        }
+
         viewModelScope.launch {
             _isDownloading.value = true
-            _downloadStatus.value = "Downloading Ubuntu ARM..."
-            repository.downloadLinux(
-                "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04-live-server-arm64.iso"
-            ) { progress ->
+            _downloadStatus.value = "Downloading $label..."
+            _downloadProgress.value = 0
+
+            repository.downloadLinux(url) { progress ->
                 _downloadProgress.value = progress
-                if (progress == 100) {
-                    _downloadStatus.value = "Download finished"
-                    _isDownloading.value = false
+
+                when (progress) {
+                    100 -> {
+                        _downloadStatus.value = "Success: $label ready"
+                        _isDownloading.value = false
+                    }
+                    -1 -> {
+                        _downloadStatus.value = "Error: Download failed"
+                        _isDownloading.value = false
+                    }
                 }
             }
         }

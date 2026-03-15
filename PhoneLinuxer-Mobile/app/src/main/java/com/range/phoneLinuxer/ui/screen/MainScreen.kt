@@ -70,10 +70,11 @@ fun MainScreen(vm: LinuxViewModel) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (progress==-1){
-           Text("Status: Download Failed")
-        }else
-        {
-        Text("Status: $status ($progress%)")
-    }}
+        if (progress == -1) {
+            Text("Error: Check your connection or storage space.", color = MaterialTheme.colorScheme.error)
+        } else {
+            Text("Downloading: $status... $progress%", style = MaterialTheme.typography.bodyMedium)
+        }
+
+}
 }
