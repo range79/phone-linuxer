@@ -10,6 +10,7 @@ object Screen {
     const val Main = "main"
     const val Settings = "settings"
     const val Logs = "logs"
+    const val StartLinux = "startLinux"
 }
 
 @Composable
@@ -23,20 +24,17 @@ fun AppNavigation(vm: LinuxViewModel) {
         composable(Screen.Welcome) {
             WelcomeScreen(
                 onDownloadDistro = { navController.navigate(Screen.Main) },
-                onStartDistro = { },
+                onStartDistro = { navController.navigate(Screen.StartLinux) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings) },
                 onNavigateToLogs = { navController.navigate(Screen.Logs) }
             )
         }
+
         composable(Screen.Main) {
             MainScreen(
                 vm = vm,
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings)
-                },
-                onBack = {
-                    navController.popBackStack()
-                }
+                onNavigateToSettings = { navController.navigate(Screen.Settings) },
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -48,6 +46,17 @@ fun AppNavigation(vm: LinuxViewModel) {
         }
 
         composable(Screen.Logs) {
+//            LogScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.StartLinux) {
+            StartLinuxScreen(
+                onBack = { navController.popBackStack() },
+                onAddEmulator = { },
+                onStartVM = { vmSettings ->
+                },
+                vms = emptyList()
+            )
         }
     }
 }
