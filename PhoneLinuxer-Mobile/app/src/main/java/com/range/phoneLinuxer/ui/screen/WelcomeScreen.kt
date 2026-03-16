@@ -1,20 +1,46 @@
 package com.range.phoneLinuxer.ui.screen
 
 import android.content.Intent
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
@@ -33,9 +59,9 @@ fun WelcomeScreen(
     if (showSupportDialog) {
         AlertDialog(
             onDismissRequest = { showSupportDialog = false },
-            title = { Text("Support Developer") },
+            title = { Text("Support the Project") },
             text = {
-                Text("You are being redirected to Buy Me a Coffee. Would you like to continue and support the project?")
+                Text("This project is developed with love by range79. Would you like to visit the support page to help keep it alive?")
             },
             confirmButton = {
                 Button(
@@ -45,12 +71,12 @@ fun WelcomeScreen(
                         context.startActivity(intent)
                     }
                 ) {
-                    Text("Yes, Let's go!")
+                    Text("Visit Page")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSupportDialog = false }) {
-                    Text("Maybe later")
+                    Text("Not now")
                 }
             }
         )
@@ -78,50 +104,79 @@ fun WelcomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "PhoneLinuxer",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            Spacer(modifier = Modifier.height(48.dp))
-
-            Button(
-                onClick = onDownloadDistro,
-                modifier = Modifier.fillMaxWidth(0.7f).height(56.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 80.dp)
             ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Download Distro")
+                Text(
+                    text = "PhoneLinuxer",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Linux in your pocket",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OutlinedButton(
-                onClick = onStartDistro,
-                modifier = Modifier.fillMaxWidth(0.7f).height(56.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Start Linux")
+                Button(
+                    onClick = onDownloadDistro,
+                    modifier = Modifier.fillMaxWidth(0.8f).height(64.dp),
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Icon(Icons.Default.Download, null)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Download Distro", fontSize = 18.sp)
+                }
+
+                OutlinedButton(
+                    onClick = onStartDistro,
+                    modifier = Modifier.fillMaxWidth(0.8f).height(64.dp),
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Icon(Icons.Default.PlayArrow, null)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Start Linux", fontSize = 18.sp)
+                }
             }
 
-            Spacer(modifier = Modifier.height(60.dp))
-
-            Button(
-                onClick = { showSupportDialog = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFFDD00),
-                    contentColor = Color.Black
+            Card(
+                modifier = Modifier
+                    .padding(bottom = 48.dp, start = 24.dp, end = 24.dp)
+                    .fillMaxWidth()
+                    .clickable { showSupportDialog = true },
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ),
-                modifier = Modifier.fillMaxWidth(0.6f).height(48.dp)
+                shape = MaterialTheme.shapes.medium
             ) {
-                Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.Red)
-                Spacer(Modifier.width(8.dp))
-                Text("Support Project", fontSize = 14.sp)
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Favorite,
+                        contentDescription = null,
+                        tint = Color(0xFFE91E63),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Support development",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
