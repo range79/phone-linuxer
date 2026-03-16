@@ -1,4 +1,4 @@
-package com.range.phoneLinuxer.model
+package com.range.phoneLinuxer.data.model
 
 data class AppSettings (
 
