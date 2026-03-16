@@ -7,7 +7,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -16,7 +21,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -27,7 +39,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.range.phoneLinuxer.util.AppLogCollector
-import java.io.OutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +64,7 @@ fun LogScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("System Logs") },
+                title = { Text("System Logs", style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -68,16 +79,23 @@ fun LogScreen(onBack: () -> Unit) {
 
                     IconButton(onClick = {
                         if (logs.isNotEmpty()) {
-                            createFileLauncher.launch("PhoneLinuxer_Logs_${System.currentTimeMillis()}.txt")
+                            createFileLauncher.launch("Linuxer_Logs_${System.currentTimeMillis()}.txt")
                         } else {
-                            Toast.makeText(context, "No logs to download", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Nothing to save", Toast.LENGTH_SHORT).show()
                         }
                     }) {
                         Icon(Icons.Default.Download, contentDescription = "Download Logs")
                     }
 
-                    IconButton(onClick = { logs.clear() }) {
-                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Logs")
+                    IconButton(onClick = {
+                        AppLogCollector.clear()
+                        Toast.makeText(context, "Logs & Cache wiped", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = "Clear All",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             )
@@ -87,20 +105,20 @@ fun LogScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            color = Color(0xFF1E1E1E)
+            color = Color(0xFF121212)
         ) {
             if (logs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No logs available.", color = Color.Gray)
+                    Text("Terminal is empty.", color = Color.DarkGray)
                 }
             } else {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(12.dp)
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(items = logs) { log: String ->
+                    items(items = logs) { log ->
                         LogItem(log)
-                        HorizontalDivider(color = Color.DarkGray, thickness = 0.5.dp)
                     }
                 }
             }
@@ -108,34 +126,40 @@ fun LogScreen(onBack: () -> Unit) {
     }
 }
 
+@Composable
+fun LogItem(log: String) {
+    val color = when {
+        log.contains("Error", ignoreCase = true) -> Color(0xFFFF5252)
+        log.contains("Success", ignoreCase = true) -> Color(0xFF4CAF50)
+        log.contains("Downloading", ignoreCase = true) -> Color(0xFF2196F3)
+        else -> Color(0xFFE0E0E0)
+    }
+
+    Text(
+        text = log,
+        color = color,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
 private fun saveLogsToUri(context: Context, uri: Uri, content: String) {
     try {
-        context.contentResolver.openOutputStream(uri)?.use { outputStream: OutputStream ->
-            outputStream.write(content.toByteArray())
+        context.contentResolver.openOutputStream(uri)?.use { os ->
+            os.write(content.toByteArray())
         }
-        Toast.makeText(context, "Logs successfully saved!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Saved to documents", Toast.LENGTH_SHORT).show()
     } catch (e: Exception) {
-        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
 private fun copyLogsToClipboard(context: Context, text: String) {
     if (text.isEmpty()) return
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("PhoneLinuxer Logs", text)
+    val clip = ClipData.newPlainText("Logs", text)
     clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "Logs copied to clipboard", Toast.LENGTH_SHORT).show()
-}
-
-@Composable
-fun LogItem(log: String) {
-    Text(
-        text = log,
-        color = if (log.contains("Error", ignoreCase = true)) Color.Red else Color.LightGray,
-        fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    )
+    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
 }

@@ -4,6 +4,8 @@ import android.content.Context
 import java.io.File
 import timber.log.Timber
 import java.util.Locale
+import kotlin.math.log10
+import kotlin.math.pow
 
 class CacheCleaner(private val context: Context) {
 
@@ -14,6 +16,9 @@ class CacheCleaner(private val context: Context) {
         try {
             context.cacheDir?.deleteRecursively()
             context.externalCacheDir?.deleteRecursively()
+
+            AppLogCollector.clear()
+
             Timber.i("Cache maintenance: %s was recovered.", formattedSize)
         } catch (e: Exception) {
             Timber.e(e, "Failed to clear cache.")
@@ -38,7 +43,7 @@ class CacheCleaner(private val context: Context) {
     private fun formatSize(size: Long): String {
         if (size <= 0) return "0.00 B"
         val units = arrayOf("B", "KB", "MB", "GB")
-        val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
-        return String.format(Locale.US, "%.2f %s", size / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+        val digitGroups = (log10(size.toDouble()) / log10(1024.0)).toInt()
+        return String.format(Locale.US, "%.2f %s", size / 1024.0.pow(digitGroups.toDouble()), units[digitGroups])
     }
 }
