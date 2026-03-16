@@ -1,4 +1,4 @@
-package com.range.phoneLinuxer.repository
+package com.range.phoneLinuxer.data.repository
 
 import android.content.Context
 import android.net.Uri

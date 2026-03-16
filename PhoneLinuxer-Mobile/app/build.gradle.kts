@@ -42,11 +42,14 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
+
 dependencies {
     //noinspection UseTomlInstead
+    implementation("androidx.compose.material:material-icons-extended")
     // Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
     testImplementation("org.slf4j:slf4j-simple:2.0.17")
     // Source: https://mvnrepository.com/artifact/androidx.navigation/navigation-compose
