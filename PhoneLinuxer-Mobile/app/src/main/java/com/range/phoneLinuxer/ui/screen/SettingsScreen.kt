@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -17,35 +18,76 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.range.phoneLinuxer.BuildConfig
+import com.range.phoneLinuxer.util.CacheCleaner
+import kotlinx.coroutines.launch
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
-    onBack: () -> Unit,
-    onNavigateToLogs: () -> Unit
-) {
+fun SettingsScreen(onBack: () -> Unit, onNavigateToLogs: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val cacheCleaner = remember { CacheCleaner(context) }
+
+    var cacheSize by remember { mutableStateOf("Calculating...") }
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        cacheSize = cacheCleaner.getTotalCacheSizeFormatted()
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Clear Cache?") },
+            text = {
+                Text("This will remove temporary installation files and logs. " +
+                        "Your downloaded Linux images (ISOs) will NOT be deleted. " +
+                        "Use this to free up internal storage.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val recovered = cacheCleaner.clearAllCache()
+                        cacheSize = "0.00 B"
+                        showDeleteDialog = false
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Recovered $recovered")
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Clear All")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     val hasFullStorageAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
     } else true
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("App Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+
             item { SettingHeader("Storage & Permissions") }
             item {
                 SettingItem(
@@ -86,9 +128,11 @@ fun SettingsScreen(
             item {
                 SettingItem(
                     title = "Clear Cache",
-                    subtitle = "Delete temporary download chunks",
+                    subtitle = "Current usage: $cacheSize",
                     icon = Icons.Default.DeleteSweep,
-                    onClick = { }
+                    onClick = {
+                        showDeleteDialog = true
+                    }
                 )
             }
 
@@ -98,7 +142,7 @@ fun SettingsScreen(
             item {
                 SettingItem(
                     title = "App Version",
-                    subtitle = BuildConfig.VERSION_NAME ,
+                    subtitle = BuildConfig.VERSION_NAME,
                     icon = Icons.Default.Info
                 )
             }
