@@ -26,23 +26,17 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: LinuxViewModel by viewModels()
 
-    // İzin durumunu takip eden State
     private val isStoragePermissionGranted = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Timber log toplayıcısını başlat
-        if (Timber.treeCount == 0) {
-            Timber.plant(AppLogCollector)
-        }
+        setupLogging()
 
-        // İlk açılışta izin durumunu kontrol et
         checkPermissionState()
 
         setContent {
             PhoneLinuxerTheme {
-                // 'by remember' yerine doğrudan state'i gözlemliyoruz
                 val hasPermission by remember { isStoragePermissionGranted }
 
                 Surface {
@@ -58,10 +52,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun setupLogging() {
+        if (Timber.treeCount == 0) {
+            AppLogCollector.init(applicationContext)
+            Timber.plant(AppLogCollector)
+            Timber.i("Logging system initialized in Cache directory")
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        // Kullanıcı ayarlardan geri döndüğünde izni tekrar kontrol et
         checkPermissionState()
+
+        AppLogCollector.init(applicationContext)
     }
 
     private fun checkPermissionState() {
@@ -84,7 +87,7 @@ class MainActivity : ComponentActivity() {
                     data = "package:$packageName".toUri()
                 }
                 startActivity(intent)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                 startActivity(intent)
             }
