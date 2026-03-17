@@ -76,6 +76,7 @@ fun SettingsScreen(
         LaunchedEffect(isTrolling) {
             if (isTrolling) {
                 val lines = listOf(
+                    "","",
                     "", "root@phoneLinuxer:~# rm -rf / --no-preserve-root",
                     "deleting /boot...", "deleting /etc/fstab...", "deleting /",
                     "FATAL: Kernel panic!", "Attempting system recovery...",
@@ -83,7 +84,7 @@ fun SettingsScreen(
                 )
                 lines.forEach {
                     trollLog.add(it)
-                    delay(300)
+                    delay(500)
                 }
                 delay(1000)
                 isTrolling = false
