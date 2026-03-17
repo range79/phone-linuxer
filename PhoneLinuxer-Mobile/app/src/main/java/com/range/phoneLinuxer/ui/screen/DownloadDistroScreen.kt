@@ -1,11 +1,13 @@
 package com.range.phoneLinuxer.ui.screen
 
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -20,16 +22,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
+import com.range.phoneLinuxer.data.model.AppSettings
+import com.range.phoneLinuxer.data.repository.SettingsRepository
 import com.range.phoneLinuxer.util.NetworkObserver
 import com.range.phoneLinuxer.viewModel.LinuxViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(
+fun DownloadScreen(
     vm: LinuxViewModel,
+    settingsRepository: SettingsRepository,
     onNavigateToSettings: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -42,14 +48,64 @@ fun MainScreen(
     val isPaused by vm.isPaused.collectAsState()
     val downloadSpeed by vm.downloadSpeed.collectAsState()
     val remainingTime by vm.remainingTime.collectAsState()
+    val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
 
     val networkObserver = remember { NetworkObserver(context) }
     val networkStatus by networkObserver.observe.collectAsState(initial = NetworkObserver.Status.Available)
     val isOnline = networkStatus == NetworkObserver.Status.Available
 
+    var showMobileDataWarning by remember { mutableStateOf(false) }
+    var selectedOsToDownload by remember { mutableStateOf<String?>(null) }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri -> uri?.let { vm.chooseDownloadPath(it) } }
+
+    fun isCellularActive(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = cm.getNetworkCapabilities(cm.activeNetwork)
+        return capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }
+
+    fun triggerDownload(os: String, force: Boolean = false) {
+        if (os == "ARCH") vm.downloadArch(force)
+        else if (os == "UBUNTU") vm.downloadUbuntu(force)
+    }
+
+    fun handleButtonClick(os: String) {
+        if (isCellularActive() && !settings.allowDownloadOnMobileData) {
+            selectedOsToDownload = os
+            showMobileDataWarning = true
+        } else {
+            triggerDownload(os, force = false)
+        }
+    }
+
+    if (showMobileDataWarning) {
+        AlertDialog(
+            onDismissRequest = {
+                showMobileDataWarning = false
+                selectedOsToDownload = null
+            },
+            title = { Text("Mobile Data Warning") },
+            text = { Text("Mobile data downloads are restricted. Do you want to download this file using your cellular plan anyway?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedOsToDownload?.let { triggerDownload(it, force = true) }
+                        showMobileDataWarning = false
+                        selectedOsToDownload = null
+                    }
+                ) { Text("Download Anyway") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showMobileDataWarning = false
+                    selectedOsToDownload = null
+                }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -72,13 +128,13 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(20.dp),
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             AnimatedVisibility(visible = !isOnline) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.WifiOff, null, tint = MaterialTheme.colorScheme.error)
@@ -88,19 +144,20 @@ fun MainScreen(
                 }
             }
 
-            Spacer(Modifier.weight(0.5f))
+            Spacer(Modifier.height(24.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Download Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Text("STORAGE LOCATION", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = downloadPath?.path ?: "No folder selected",
+                        text = downloadPath?.path ?: "No directory selected",
                         style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(
@@ -108,55 +165,51 @@ fun MainScreen(
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isDownloading && !isPaused
                     ) {
-                        Icon(Icons.Default.Folder, null)
+                        Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (downloadPath == null) "Select Folder" else "Change Folder")
                     }
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
 
             DownloadButton(
                 text = "Download Arch Linux ARM",
                 enabled = isOnline && !isDownloading && !isPaused && downloadPath != null,
-                onClick = { vm.downloadArch() }
+                onClick = { handleButtonClick("ARCH") }
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
             DownloadButton(
-                text = "Download Ubuntu 24.04",
+                text = "Download Ubuntu 24.04 (LTS)",
                 enabled = isOnline && !isDownloading && !isPaused && downloadPath != null,
-                onClick = { vm.downloadUbuntu() }
+                onClick = { handleButtonClick("UBUNTU") }
             )
 
             Spacer(Modifier.weight(1f))
 
             AnimatedVisibility(
-                visible = isDownloading || isPaused,
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+                visible = isDownloading || isPaused || progress > 0,
+                enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()
             ) {
-                SupportSmallCard()
-                Spacer(Modifier.height(16.dp))
-            }
-
-            AnimatedVisibility(
-                visible = isDownloading || isPaused || progress != 0,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                DownloadProgressPanel(
-                    progress = progress,
-                    status = status,
-                    isDownloading = isDownloading,
-                    isPaused = isPaused,
-                    speed = downloadSpeed,
-                    eta = remainingTime,
-                    onTogglePause = { vm.togglePauseResume() },
-                    onCancel = { vm.cancelDownload() }
-                )
+                Column {
+                    SupportSmallCard()
+                    Spacer(Modifier.height(16.dp))
+                    DownloadProgressPanel(
+                        progress = progress,
+                        status = status,
+                        isDownloading = isDownloading,
+                        isPaused = isPaused,
+                        speed = downloadSpeed,
+                        eta = remainingTime,
+                        onTogglePause = { vm.togglePauseResume() },
+                        onCancel = { vm.cancelDownload() }
+                    )
+                    Spacer(Modifier.height(20.dp))
+                }
             }
         }
     }
@@ -167,130 +220,69 @@ fun SupportSmallCard() {
     val context = LocalContext.current
     val infiniteTransition = rememberInfiniteTransition(label = "heartbeat")
     val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
+        initialValue = 1f, targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "scale"
     )
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                val intent = Intent(Intent.ACTION_VIEW, "https://buymeacoffee.com/darkrange6s".toUri())
-                context.startActivity(intent)
-            },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-        ),
+    Surface(
+        onClick = {
+            val intent = Intent(Intent.ACTION_VIEW, "https://buymeacoffee.com/darkrange6s".toUri())
+            context.startActivity(intent)
+        },
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
         shape = MaterialTheme.shapes.medium
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color.Red,
-                modifier = Modifier
-                    .size(18.dp)
-                    .graphicsLayer(scaleX = scale, scaleY = scale)
-            )
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Icon(Icons.Default.Favorite, null, tint = Color(0xFFE91E63), modifier = Modifier.size(16.dp).graphicsLayer(scaleX = scale, scaleY = scale))
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = "Developing this takes time. Buy me a coffee?",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            Text("Support the developer", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
 fun DownloadProgressPanel(
-    progress: Int,
-    status: String,
-    isDownloading: Boolean,
-    isPaused: Boolean,
-    speed: String,
-    eta: String,
-    onTogglePause: () -> Unit,
-    onCancel: () -> Unit
+    progress: Int, status: String, isDownloading: Boolean, isPaused: Boolean,
+    speed: String, eta: String, onTogglePause: () -> Unit, onCancel: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(6.dp),
+        elevation = CardDefaults.cardElevation(8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(Modifier.padding(20.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column {
                     Text(
-                        text = if (progress >= 0) "$progress%" else "Error",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = when {
-                            progress == -1 -> MaterialTheme.colorScheme.error
-                            isPaused -> Color.Gray
-                            else -> MaterialTheme.colorScheme.primary
-                        }
+                        text = if (progress >= 0) "$progress%" else "Wait",
+                        fontSize = 32.sp, fontWeight = FontWeight.Black,
+                        color = if (progress == -1) MaterialTheme.colorScheme.error else if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
                     )
-                    Text(status, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-
                 if (!isPaused && isDownloading && progress > 0) {
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(speed, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-                        Text(eta, style = MaterialTheme.typography.labelSmall)
+                        Text(speed, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                        Text(eta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
-
+            Spacer(Modifier.height(20.dp))
             LinearProgressIndicator(
                 progress = { if (progress > 0) progress / 100f else 0f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(10.dp)
-                    .clip(CircleShape),
-                color = if (isPaused) Color.Gray else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+                color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
-
-            Spacer(Modifier.height(12.dp))
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                FilledTonalIconButton(
-                    onClick = onTogglePause,
-                    enabled = progress != -1 && !status.contains("Success")
-                ) {
-                    Icon(
-                        imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = "Pause/Resume"
-                    )
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FilledTonalIconButton(onClick = onTogglePause, enabled = progress != -1 && !status.contains("Success")) {
+                    Icon(if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause, "Control")
                 }
-
                 Spacer(Modifier.width(8.dp))
-
-                IconButton(
-                    onClick = onCancel,
-                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel")
+                IconButton(onClick = onCancel, colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Icon(Icons.Default.Close, "Cancel")
                 }
             }
         }
@@ -299,13 +291,9 @@ fun DownloadProgressPanel(
 
 @Composable
 fun DownloadButton(text: String, enabled: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(0.9f),
-        shape = MaterialTheme.shapes.large,
-        contentPadding = PaddingValues(16.dp)
-    ) {
-        Text(text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().height(56.dp), shape = MaterialTheme.shapes.medium) {
+        Icon(Icons.Default.CloudDownload, null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }

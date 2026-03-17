@@ -50,11 +50,13 @@ android {
 dependencies {
     //noinspection UseTomlInstead
     implementation("androidx.compose.material:material-icons-extended")
+
     // Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
     testImplementation("org.slf4j:slf4j-simple:2.0.17")
     // Source: https://mvnrepository.com/artifact/androidx.navigation/navigation-compose
     implementation("androidx.navigation:navigation-compose:2.9.7")
-
+// Source: https://mvnrepository.com/artifact/androidx.datastore/datastore-preferences
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("io.ktor:ktor-client-core:3.4.1")
     implementation("io.ktor:ktor-client-cio:3.4.1")
