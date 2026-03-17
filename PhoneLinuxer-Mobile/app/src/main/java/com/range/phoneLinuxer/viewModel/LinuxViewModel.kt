@@ -4,12 +4,21 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.range.phoneLinuxer.data.repository.LinuxRepositoryImpl
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import com.range.phoneLinuxer.data.repository.SettingsRepository
+import com.range.phoneLinuxer.data.repository.impl.LinuxRepositoryImpl
+import com.range.phoneLinuxer.data.repository.impl.SettingsRepositoryImpl
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class LinuxViewModel(application: Application) : AndroidViewModel(application) {
     private val appContext = getApplication<Application>().applicationContext
+
+    private val settingsRepository: SettingsRepository = SettingsRepositoryImpl(appContext)
+    private val settingsFlow = settingsRepository.settingsFlow
+
     private var repo: LinuxRepositoryImpl? = null
     private var downloadJob: Job? = null
 
@@ -42,17 +51,19 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
         repo = LinuxRepositoryImpl(appContext, uri)
     }
 
-    fun downloadArch() {
+    fun downloadArch(force: Boolean = false) {
         startDownload(
             label = "Arch Linux ARM",
-            url = "https://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
+            url = "https://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz",
+            isForced = force
         )
     }
 
-    fun downloadUbuntu() {
+    fun downloadUbuntu(force: Boolean = false) {
         startDownload(
             label = "Ubuntu 24.04",
-            url = "https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/noble-live-server-arm64.iso"
+            url = "https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/noble-live-server-arm64.iso",
+            isForced = force
         )
     }
 
@@ -79,7 +90,7 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
         _remainingTime.value = ""
     }
 
-    private fun startDownload(label: String, url: String) {
+    private fun startDownload(label: String, url: String, isForced: Boolean = false) {
         val repository = repo ?: run {
             _downloadStatus.value = "Error: Select folder first"
             return
@@ -90,13 +101,21 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
 
         downloadJob?.cancel()
         downloadJob = viewModelScope.launch {
+            val settingsFromRepo = settingsFlow.first()
+
+            val effectiveSettings = if (isForced) {
+                settingsFromRepo.copy(allowDownloadOnMobileData = true)
+            } else {
+                settingsFromRepo
+            }
+
             _isDownloading.value = true
             _downloadStatus.value = "Connecting..."
             val startTime = System.currentTimeMillis()
 
-            repository.downloadLinux(url) { downloaded, total, isError ->
+            repository.downloadLinux(url, effectiveSettings) { downloaded, total, isError ->
                 if (isError) {
-                    _downloadStatus.value = "Error: Connection Lost"
+                    _downloadStatus.value = "Error: Connection Lost or Restricted"
                     _downloadProgress.value = -1
                     _isDownloading.value = false
                 } else if (!_isPaused.value) {
@@ -137,9 +156,14 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun formatEta(seconds: Long): String {
         return when {
-            seconds >= 3600 -> "${seconds / 3600}h ${ (seconds % 3600) / 60}m left"
+            seconds >= 3600 -> "${seconds / 3600}h ${(seconds % 3600) / 60}m left"
             seconds >= 60 -> "${seconds / 60}m ${seconds % 60}s left"
             else -> "${seconds}s left"
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        repo?.close()
     }
 }

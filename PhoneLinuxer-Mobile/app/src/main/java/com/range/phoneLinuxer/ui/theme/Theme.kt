@@ -1,31 +1,46 @@
 package com.range.phoneLinuxer.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-
-private val DarkColors = darkColorScheme(
-    primary = androidx.compose.ui.graphics.Color(0xFF4CAF50),
-    background = androidx.compose.ui.graphics.Color.Black
-)
-
-private val LightColors = lightColorScheme(
-    primary = androidx.compose.ui.graphics.Color(0xFF2E7D32),
-    background = androidx.compose.ui.graphics.Color.White
-)
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun PhoneLinuxerTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
+    seedColor: Color = Color(0xFF6750A4),
     content: @Composable () -> Unit
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    val context = LocalContext.current
 
-    val colors = if (darkTheme) DarkColors else LightColors
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+
+        darkTheme -> {
+            darkColorScheme(
+                primary = seedColor,
+                onPrimary = Color.Black,
+                surface = Color(0xFF121212),
+                background = Color.Black
+            )
+        }
+        else -> {
+            lightColorScheme(
+                primary = seedColor,
+                onPrimary = Color.White,
+                surface = Color(0xFFFCFDF6),
+                background = Color.White
+            )
+        }
+    }
 
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = colorScheme,
         content = content
     )
 }

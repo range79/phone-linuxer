@@ -2,6 +2,7 @@ package com.range.phoneLinuxer.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.*
+import com.range.phoneLinuxer.data.repository.SettingsRepository
 import com.range.phoneLinuxer.ui.screen.*
 import com.range.phoneLinuxer.viewModel.LinuxViewModel
 
@@ -14,7 +15,10 @@ object Screen {
 }
 
 @Composable
-fun AppNavigation(vm: LinuxViewModel) {
+fun AppNavigation(
+    vm: LinuxViewModel,
+    settingsRepository: SettingsRepository
+) {
     val navController = rememberNavController()
 
     NavHost(
@@ -31,17 +35,19 @@ fun AppNavigation(vm: LinuxViewModel) {
         }
 
         composable(Screen.Main) {
-            MainScreen(
+            DownloadScreen(
                 vm = vm,
                 onNavigateToSettings = { navController.navigate(Screen.Settings) },
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                settingsRepository = settingsRepository
             )
         }
 
         composable(Screen.Settings) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onNavigateToLogs = { navController.navigate(Screen.Logs) }
+                onNavigateToLogs = { navController.navigate(Screen.Logs) },
+                repository = settingsRepository
             )
         }
 

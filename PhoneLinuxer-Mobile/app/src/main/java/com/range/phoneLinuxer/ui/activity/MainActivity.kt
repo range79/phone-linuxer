@@ -11,10 +11,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.range.phoneLinuxer.data.model.AppSettings
+import com.range.phoneLinuxer.data.model.DarkModeEnum
+import com.range.phoneLinuxer.data.repository.SettingsRepository
+import com.range.phoneLinuxer.data.repository.impl.SettingsRepositoryImpl
 import com.range.phoneLinuxer.ui.navigation.AppNavigation
 import com.range.phoneLinuxer.ui.screen.PermissionDeniedScreen
 import com.range.phoneLinuxer.ui.theme.PhoneLinuxerTheme
@@ -25,23 +34,42 @@ import timber.log.Timber
 class MainActivity : ComponentActivity() {
 
     private val viewModel: LinuxViewModel by viewModels()
-
+    private lateinit var settingsRepository: SettingsRepository
     private val isStoragePermissionGranted = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setupLogging()
+        settingsRepository = SettingsRepositoryImpl(applicationContext)
 
+        setupLogging()
         checkPermissionState()
 
         setContent {
-            PhoneLinuxerTheme {
-                val hasPermission by remember { isStoragePermissionGranted }
+            val settings by settingsRepository.settingsFlow.collectAsState(initial = AppSettings())
 
-                Surface {
+            val useDarkTheme = when (settings.darkMode) {
+                DarkModeEnum.LIGHT -> false
+                DarkModeEnum.DARK -> true
+                DarkModeEnum.SYSTEM -> isSystemInDarkTheme()
+            }
+
+            PhoneLinuxerTheme(
+                darkTheme = useDarkTheme,
+                dynamicColor = settings.useDynamicColors,
+                seedColor = Color(settings.themeColorArgb)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    val hasPermission by remember { isStoragePermissionGranted }
+
                     if (hasPermission) {
-                        AppNavigation(viewModel)
+                        AppNavigation(
+                            vm = viewModel,
+                            settingsRepository = settingsRepository
+                        )
                     } else {
                         PermissionDeniedScreen(onRequestPermission = {
                             checkAndRequestStoragePermissions()
@@ -56,14 +84,13 @@ class MainActivity : ComponentActivity() {
         if (Timber.treeCount == 0) {
             AppLogCollector.init(applicationContext)
             Timber.plant(AppLogCollector)
-            Timber.i("Logging system initialized in Cache directory")
+            Timber.i("Logging system initialized")
         }
     }
 
     override fun onResume() {
         super.onResume()
         checkPermissionState()
-
         AppLogCollector.init(applicationContext)
     }
 
