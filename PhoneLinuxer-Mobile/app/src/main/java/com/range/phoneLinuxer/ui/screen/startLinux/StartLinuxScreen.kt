@@ -1,17 +1,13 @@
-package com.range.phoneLinuxer.ui.screen.emulator
+package com.range.phoneLinuxer.ui.screen.startLinux
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.SettingsInputComponent
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -25,8 +21,31 @@ fun StartLinuxScreen(
     onBack: () -> Unit,
     onAddEmulator: () -> Unit,
     onStartVM: (VirtualMachineSettings) -> Unit,
+    onDeleteVM: (String) -> Unit,
     vms: List<VirtualMachineSettings> = emptyList()
 ) {
+    var vmToDelete by remember { mutableStateOf<VirtualMachineSettings?>(null) }
+
+    vmToDelete?.let { vm ->
+        AlertDialog(
+            onDismissRequest = { vmToDelete = null },
+            title = { Text("Delete VM") },
+            text = { Text("Are you sure you want to delete '${vm.vmName}'?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteVM(vm.id)
+                        vmToDelete = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { vmToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -54,8 +73,12 @@ fun StartLinuxScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(vms) { vm ->
-                    VMCard(vm = vm, onStart = { onStartVM(vm) })
+                items(vms, key = { it.id }) { vm ->
+                    VMCard(
+                        vm = vm,
+                        onStart = { onStartVM(vm) },
+                        onDelete = { vmToDelete = vm }
+                    )
                 }
             }
         }
@@ -63,7 +86,11 @@ fun StartLinuxScreen(
 }
 
 @Composable
-fun VMCard(vm: VirtualMachineSettings, onStart: () -> Unit) {
+fun VMCard(
+    vm: VirtualMachineSettings,
+    onStart: () -> Unit,
+    onDelete: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -74,7 +101,7 @@ fun VMCard(vm: VirtualMachineSettings, onStart: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = vm.vmName,
                         style = MaterialTheme.typography.titleLarge,
@@ -87,13 +114,23 @@ fun VMCard(vm: VirtualMachineSettings, onStart: () -> Unit) {
                     )
                 }
 
-                FilledIconButton(
-                    onClick = onStart,
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Start VM")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete VM",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    FilledIconButton(
+                        onClick = onStart,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Start VM")
+                    }
                 }
             }
 
