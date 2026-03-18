@@ -1,15 +1,15 @@
 package com.range.phoneLinuxer.ui.navigation
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.*
 import com.range.phoneLinuxer.data.repository.SettingsRepository
 import com.range.phoneLinuxer.ui.screen.*
 import com.range.phoneLinuxer.ui.screen.download.DownloadScreen
 import com.range.phoneLinuxer.ui.screen.emulator.AddNewEmulatorScreen
-import com.range.phoneLinuxer.ui.screen.emulator.StartLinuxScreen
+import com.range.phoneLinuxer.ui.screen.startLinux.StartLinuxScreen
 import com.range.phoneLinuxer.ui.screen.log.LogScreen
 import com.range.phoneLinuxer.ui.screen.settings.SettingsScreen
 import com.range.phoneLinuxer.util.NavDebouncer
@@ -32,8 +32,24 @@ fun AppNavigation(
     settingsRepository: SettingsRepository
 ) {
     val navController = rememberNavController()
-
+    val context = LocalContext.current
     val vmList by emulatorVm.vms.collectAsState()
+
+    LaunchedEffect(Unit) {
+        emulatorVm.uiEvent.collect { event ->
+            when (event) {
+                is EmulatorViewModel.UiEvent.Error -> {
+                    Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+                }
+                is EmulatorViewModel.UiEvent.DeleteSuccess -> {
+                    Toast.makeText(context, "VM successfully deleted", Toast.LENGTH_SHORT).show()
+                }
+                is EmulatorViewModel.UiEvent.SaveSuccess -> {
+                    Toast.makeText(context, "VM saved successfully", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     fun safeNavigate(route: String) {
         if (NavDebouncer.canNavigate()) {
@@ -90,17 +106,28 @@ fun AppNavigation(
                 onBack = { safePop() },
                 onAddEmulator = { safeNavigate(Screen.AddEmulator) },
                 onStartVM = { selectedVm ->
+                    println("Launching: ${selectedVm.vmName}")
+                    safeNavigate(Screen.Logs)
                 },
-                vms = vmList
+                vms = vmList,
+                onDeleteVM = { vmId ->
+                    emulatorVm.deleteVm(vmId)
+                }
             )
         }
 
         composable(Screen.AddEmulator) {
+            var isSavingInProgress by remember { mutableStateOf(false) }
+
             AddNewEmulatorScreen(
+                viewModel = emulatorVm,
                 onBack = { safePop() },
                 onSave = { newVmSettings ->
-                    emulatorVm.saveVm(newVmSettings)
-                    safePop()
+                    if (!isSavingInProgress) {
+                        isSavingInProgress = true
+                        emulatorVm.saveVm(newVmSettings)
+                        safePop()
+                    }
                 }
             )
         }

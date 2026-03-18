@@ -24,4 +24,7 @@ enum class CpuModel {
     fun toQemuParam(): String {
         return this.name.lowercase().replace("_", "-")
     }
+    fun requiresKvm(): Boolean {
+        return this == HOST
+    }
 }
