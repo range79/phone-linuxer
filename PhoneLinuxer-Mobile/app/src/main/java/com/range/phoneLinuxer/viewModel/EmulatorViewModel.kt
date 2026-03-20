@@ -16,7 +16,10 @@ import timber.log.Timber
 class EmulatorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = VmSettingsRepositoryImpl(application.applicationContext)
-    private val executor = EmulatorExecutor()
+    private val executor = EmulatorExecutor(application)
+
+    private val _vmLogs = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val vmLogs: StateFlow<Map<String, List<String>>> = _vmLogs.asStateFlow()
 
     private val _editingVm = MutableStateFlow<VirtualMachineSettings?>(null)
     val editingVm: StateFlow<VirtualMachineSettings?> = _editingVm.asStateFlow()
@@ -27,6 +30,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     sealed class UiEvent {
         object SaveSuccess : UiEvent()
         object DeleteSuccess : UiEvent()
+        data class NavigateToEmulator(val vmId: String) : UiEvent()
         data class Error(val message: String) : UiEvent()
     }
 
@@ -37,51 +41,78 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
-    fun setEditingVm(vm: VirtualMachineSettings?) {
-        _editingVm.value = vm
-    }
-
-    fun loadVmForEditing(id: String) {
+    fun toggleVmState(settings: VirtualMachineSettings) {
         viewModelScope.launch {
-            try {
-                val vm = repository.findAllVms().firstOrNull()?.find { it.id == id }
-                _editingVm.emit(vm)
-                Timber.d("ViewModel: VM loaded for editing: ${vm?.vmName}")
-            } catch (e: Exception) {
-                _uiEvent.send(UiEvent.Error("Could not load VM data: ${e.message}"))
+            if (executor.isAlive(settings.id)) {
+                stopVm(settings.id)
+            } else {
+                startVm(settings)
             }
         }
     }
 
     fun startVm(settings: VirtualMachineSettings) {
-        if (executor.isRunning()) {
-            viewModelScope.launch { _uiEvent.send(UiEvent.Error("Another VM is already running!")) }
-            return
-        }
-
         viewModelScope.launch {
             try {
                 updateVmState(settings.id, VmState.STARTING)
 
-                val command = settings.buildFullCommand()
-                executor.launch(command)
+                clearLogs(settings.id)
+                appendLog(settings.id, "--- Starting QEMU Engine ---")
 
-                updateVmState(settings.id, VmState.RUNNING)
-                Timber.i("Emulator: ${settings.vmName} is now running.")
+                val fullCommand = settings.buildFullCommand()
+
+                viewModelScope.launch {
+                    executor.getLogStream(settings.id).collect { logLine ->
+                        appendLog(settings.id, logLine)
+                    }
+                }
+
+                val result = executor.executeCommand(
+                    vmId = settings.id,
+                    fullCommand = fullCommand
+                )
+
+                result.onSuccess { pid ->
+                    updateVmState(settings.id, VmState.RUNNING)
+                    Timber.i("VM ${settings.vmName} started. PID: $pid")
+
+                    _uiEvent.send(UiEvent.NavigateToEmulator(settings.id))
+                }.onFailure { e ->
+                    updateVmState(settings.id, VmState.ERROR)
+                    appendLog(settings.id, "LAUNCH ERROR: ${e.message}")
+                    _uiEvent.send(UiEvent.Error("Launch failed: ${e.message}"))
+                }
+
             } catch (e: Exception) {
                 updateVmState(settings.id, VmState.ERROR)
-                _uiEvent.send(UiEvent.Error("Launch failed: ${e.message}"))
+                appendLog(settings.id, "SYSTEM ERROR: ${e.message}")
+                _uiEvent.send(UiEvent.Error("System failure: ${e.message}"))
             }
         }
+    }
+
+    private fun appendLog(vmId: String, line: String) {
+        _vmLogs.update { currentMap ->
+            val currentList = currentMap[vmId] ?: emptyList()
+            val newList = (currentList + line).takeLast(500)
+            currentMap + (vmId to newList)
+        }
+    }
+
+    private fun clearLogs(vmId: String) {
+        _vmLogs.update { it + (vmId to emptyList()) }
     }
 
     fun stopVm(vmId: String) {
         viewModelScope.launch {
             try {
                 updateVmState(vmId, VmState.STOPPING)
-                executor.stop()
+                appendLog(vmId, "--- Terminating VM ---")
+
+                executor.killProcess(vmId)
+
                 updateVmState(vmId, VmState.INACTIVE)
-                Timber.i("Emulator: VM stopped by user.")
+                Timber.i("VM $vmId stopped.")
             } catch (e: Exception) {
                 _uiEvent.send(UiEvent.Error("Stop error: ${e.message}"))
             }
@@ -99,7 +130,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             try {
                 repository.saveVm(settings)
                 _uiEvent.send(UiEvent.SaveSuccess)
-                setEditingVm(null)
+                _editingVm.value = null
             } catch (e: Exception) {
                 _uiEvent.send(UiEvent.Error(e.message ?: "Save failed"))
             }
@@ -109,6 +140,9 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     fun deleteVm(vmId: String) {
         viewModelScope.launch {
             try {
+                if (executor.isAlive(vmId)) {
+                    executor.killProcess(vmId)
+                }
                 repository.deleteVm(vmId)
                 _uiEvent.send(UiEvent.DeleteSuccess)
             } catch (e: Exception) {
@@ -119,6 +153,17 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        executor.stop()
+        executor.killAll()
+    }
+
+    fun setEditingVm(vm: VirtualMachineSettings?) {
+        _editingVm.value = vm
+    }
+
+    fun loadVmForEditing(id: String) {
+        viewModelScope.launch {
+            val vm = vms.value.find { it.id == id }
+            _editingVm.emit(vm)
+        }
     }
 }

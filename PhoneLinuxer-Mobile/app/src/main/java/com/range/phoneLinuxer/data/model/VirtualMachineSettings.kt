@@ -35,7 +35,7 @@ data class VirtualMachineSettings(
 fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<String> {
     val cmd = mutableListOf<String>()
 
-    cmd.add("qemu-system-aarch64")
+    cmd.add("jniLibs/libqemu_executable.so/libqemu_system.so")
     cmd.add("-machine")
     cmd.add("virt")
 

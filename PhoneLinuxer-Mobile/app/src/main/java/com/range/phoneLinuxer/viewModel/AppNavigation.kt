@@ -4,14 +4,17 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.range.phoneLinuxer.data.repository.SettingsRepository
-import com.range.phoneLinuxer.ui.screen.*
+import com.range.phoneLinuxer.ui.screen.WelcomeScreen
 import com.range.phoneLinuxer.ui.screen.download.DownloadScreen
 import com.range.phoneLinuxer.ui.screen.emulator.AddNewEmulatorScreen
+import com.range.phoneLinuxer.ui.screen.emulator.VmControlScreen
 import com.range.phoneLinuxer.ui.screen.emulatorList.EditEmulatorScreen
 import com.range.phoneLinuxer.ui.screen.emulatorList.EmulatorListScreen
-import com.range.phoneLinuxer.ui.screen.log.LogScreen
+import com.range.phoneLinuxer.ui.screen.log.QemuLogsScreen
 import com.range.phoneLinuxer.ui.screen.settings.SettingsScreen
 import com.range.phoneLinuxer.util.NavDebouncer
 import com.range.phoneLinuxer.viewModel.LinuxViewModel
@@ -22,9 +25,11 @@ object Screen {
     const val Main = "main"
     const val Settings = "settings"
     const val Logs = "logs"
-    const val emulatorScreen = "emulatorScreen"
+    const val VmLogs = "vmLogs/{vmId}"
+    const val EmulatorScreen = "emulatorScreen"
     const val AddEmulator = "addEmulator"
     const val EditEmulator = "editEmulator"
+    const val VncViewer = "vncViewer/{vmId}"
 }
 
 @Composable
@@ -37,29 +42,43 @@ fun AppNavigation(
     val context = LocalContext.current
     val vmList by emulatorVm.vms.collectAsState(initial = emptyList())
 
-    LaunchedEffect(Unit) {
-        emulatorVm.uiEvent.collect { event ->
-            when (event) {
-                is EmulatorViewModel.UiEvent.Error -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
-                is EmulatorViewModel.UiEvent.DeleteSuccess -> Toast.makeText(context, "VM successfully deleted", Toast.LENGTH_SHORT).show()
-                is EmulatorViewModel.UiEvent.SaveSuccess -> Toast.makeText(context, "VM saved successfully", Toast.LENGTH_SHORT).show()
-            }
-        }
+    fun safePop() {
+        if (NavDebouncer.canNavigate()) navController.popBackStack()
     }
 
     fun safeNavigate(route: String) {
         if (NavDebouncer.canNavigate()) navController.navigate(route)
     }
 
-    fun safePop() {
-        if (NavDebouncer.canNavigate()) navController.popBackStack()
+    LaunchedEffect(Unit) {
+        emulatorVm.uiEvent.collect { event ->
+            when (event) {
+                is EmulatorViewModel.UiEvent.Error ->
+                    Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+
+                is EmulatorViewModel.UiEvent.DeleteSuccess ->
+                    Toast.makeText(context, "Virtual machine deleted successfully", Toast.LENGTH_SHORT).show()
+
+                is EmulatorViewModel.UiEvent.SaveSuccess -> {
+                    Toast.makeText(context, "Virtual machine configuration saved", Toast.LENGTH_SHORT).show()
+                    safePop()
+                }
+
+                is EmulatorViewModel.UiEvent.NavigateToEmulator -> {
+                    if (NavDebouncer.canNavigate()) {
+                        navController.navigate("vncViewer/${event.vmId}")
+                    }
+                }
+            }
+        }
     }
 
     NavHost(navController = navController, startDestination = Screen.Welcome) {
+
         composable(Screen.Welcome) {
             WelcomeScreen(
                 onDownloadDistro = { safeNavigate(Screen.Main) },
-                onStartDistro = { safeNavigate(Screen.emulatorScreen) },
+                onStartDistro = { safeNavigate(Screen.EmulatorScreen) },
                 onNavigateToSettings = { safeNavigate(Screen.Settings) },
                 onNavigateToLogs = { safeNavigate(Screen.Logs) }
             )
@@ -84,12 +103,21 @@ fun AppNavigation(
             )
         }
 
-        composable(Screen.Logs) {
+        composable(
+            route = Screen.VmLogs,
+            arguments = listOf(navArgument("vmId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val vmId = backStackEntry.arguments?.getString("vmId") ?: ""
             BackHandler { safePop() }
-            LogScreen(onBack = { safePop() })
+
+            QemuLogsScreen(
+                vmId = vmId,
+                viewModel = emulatorVm,
+                onBack = { safePop() }
+            )
         }
 
-        composable(Screen.emulatorScreen) {
+        composable(Screen.EmulatorScreen) {
             BackHandler { safePop() }
             EmulatorListScreen(
                 onBack = { safePop() },
@@ -99,14 +127,32 @@ fun AppNavigation(
                     safeNavigate(Screen.AddEmulator)
                 },
                 onStartVM = { selectedVm ->
-                    emulatorVm.startVm(selectedVm)
-                    safeNavigate(Screen.Logs)
+                    emulatorVm.toggleVmState(selectedVm)
                 },
                 onDeleteVM = { vmId -> emulatorVm.deleteVm(vmId) },
                 onEditVM = { vmToEdit ->
                     emulatorVm.loadVmForEditing(vmToEdit.id)
                     safeNavigate(Screen.EditEmulator)
+                },
+                onNavigateToEmulator = { vmId ->
+                    safeNavigate("vncViewer/$vmId")
                 }
+            )
+        }
+
+        composable(
+            route = Screen.VncViewer,
+            arguments = listOf(navArgument("vmId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val vmId = backStackEntry.arguments?.getString("vmId") ?: ""
+
+            BackHandler { safePop() }
+
+            VmControlScreen(
+                vmId = vmId,
+                viewModel = emulatorVm,
+                onNavigateToLogs = { safeNavigate("vmLogs/$vmId") },
+                onBack = { safePop() }
             )
         }
 
@@ -123,8 +169,6 @@ fun AppNavigation(
                 },
                 onSave = { newVm ->
                     emulatorVm.saveVm(newVm)
-                    emulatorVm.setEditingVm(null)
-                    safePop()
                 }
             )
         }
@@ -142,8 +186,6 @@ fun AppNavigation(
                 },
                 onSave = { updatedVm ->
                     emulatorVm.saveVm(updatedVm)
-                    emulatorVm.setEditingVm(null)
-                    safePop()
                 }
             )
         }

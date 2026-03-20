@@ -11,7 +11,6 @@ object QemuNativeInjector {
         if (isLoaded) return
 
         try {
-            // Android'in kütüphaneleri sakladığı sistem dizini
             val libDir = File(context.applicationInfo.nativeLibraryDir)
 
             if (libDir.exists() && libDir.isDirectory) {
@@ -19,8 +18,6 @@ object QemuNativeInjector {
                     file.extension == "so"
                 }?.map { it.name.removePrefix("lib").removeSuffix(".so") } ?: emptyList()
 
-                // Kritik: QEMU kütüphanesi en son yüklenmelidir çünkü diğerlerine bağımlıdır.
-                // Önce bağımlılıkları (glib, pixman, ffi vb.) yüklüyoruz.
                 val sortedLibs = libs.sortedWith(compareBy {
                     if (it.contains("qemu")) 1 else 0
                 })
@@ -30,8 +27,6 @@ object QemuNativeInjector {
                         System.loadLibrary(libName)
                         Timber.Forest.tag("Injector").d("Injected: lib$libName.so")
                     } catch (e: UnsatisfiedLinkError) {
-                        // Bazı kütüphaneler o an yüklenemezse (bağımlılık sırası)
-                        // bir sonraki turda tekrar denenebilir veya loglanabilir.
                         Timber.Forest.tag("Injector").w("Pending or Failed: $libName - ${e.message}")
                     }
                 }

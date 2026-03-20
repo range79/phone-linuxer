@@ -13,7 +13,21 @@ android {
     compileSdk {
         version = release(36)
     }
+    sourceSets {
+        getByName("main") {
 
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
+    }
+    packaging {
+        resources {
+
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     defaultConfig {
         applicationId = "com.range.PhoneLinuxer"
         minSdk = 26
