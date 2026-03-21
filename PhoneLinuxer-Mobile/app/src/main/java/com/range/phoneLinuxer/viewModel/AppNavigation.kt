@@ -14,6 +14,7 @@ import com.range.phoneLinuxer.ui.screen.emulator.AddNewEmulatorScreen
 import com.range.phoneLinuxer.ui.screen.emulator.VmControlScreen
 import com.range.phoneLinuxer.ui.screen.emulatorList.EditEmulatorScreen
 import com.range.phoneLinuxer.ui.screen.emulatorList.EmulatorListScreen
+import com.range.phoneLinuxer.ui.screen.log.LogScreen
 import com.range.phoneLinuxer.ui.screen.log.QemuLogsScreen
 import com.range.phoneLinuxer.ui.screen.settings.SettingsScreen
 import com.range.phoneLinuxer.util.NavDebouncer
@@ -101,6 +102,11 @@ fun AppNavigation(
                 onNavigateToLogs = { safeNavigate(Screen.Logs) },
                 repository = settingsRepository
             )
+        }
+
+        composable(Screen.Logs) {
+            BackHandler { safePop() }
+            LogScreen(onBack = { safePop() })
         }
 
         composable(

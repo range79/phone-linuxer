@@ -31,6 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,25 +43,35 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.range.phoneLinuxer.util.AppLogCollector
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val logs = AppLogCollector.logs
     val listState = rememberLazyListState()
+
+    var displayLogs by remember { mutableStateOf(emptyList<String>()) }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            displayLogs = AppLogCollector.logs.toList()
+            delay(500)
+        }
+    }
 
     val createFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
         uri?.let {
-            saveLogsToUri(context, it, logs.joinToString("\n"))
+            saveLogsToUri(context, it, displayLogs.joinToString("\n"))
         }
     }
 
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) {
-            listState.animateScrollToItem(logs.size - 1)
+    LaunchedEffect(displayLogs.size) {
+        if (displayLogs.isNotEmpty()) {
+            listState.animateScrollToItem(displayLogs.size - 1)
         }
     }
 
@@ -72,13 +86,13 @@ fun LogScreen(onBack: () -> Unit) {
                 },
                 actions = {
                     IconButton(onClick = {
-                        copyLogsToClipboard(context, logs.joinToString("\n"))
+                        copyLogsToClipboard(context, displayLogs.joinToString("\n"))
                     }) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy Logs")
                     }
 
                     IconButton(onClick = {
-                        if (logs.isNotEmpty()) {
+                        if (displayLogs.isNotEmpty()) {
                             createFileLauncher.launch("Linuxer_Logs_${System.currentTimeMillis()}.txt")
                         } else {
                             Toast.makeText(context, "Nothing to save", Toast.LENGTH_SHORT).show()
@@ -89,6 +103,7 @@ fun LogScreen(onBack: () -> Unit) {
 
                     IconButton(onClick = {
                         AppLogCollector.clear()
+                        displayLogs = emptyList()
                         Toast.makeText(context, "Logs & Cache wiped", Toast.LENGTH_SHORT).show()
                     }) {
                         Icon(
@@ -107,7 +122,7 @@ fun LogScreen(onBack: () -> Unit) {
                 .padding(padding),
             color = Color(0xFF121212)
         ) {
-            if (logs.isEmpty()) {
+            if (displayLogs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Terminal is empty.", color = Color.DarkGray)
                 }
@@ -117,7 +132,7 @@ fun LogScreen(onBack: () -> Unit) {
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(items = logs) { log ->
+                    items(items = displayLogs) { log ->
                         LogItem(log)
                     }
                 }
