@@ -3,6 +3,7 @@ name: Android Release
 on:
   push:
     branches: [ "emulator", "main" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ "emulator", "main" ]
   workflow_dispatch:
