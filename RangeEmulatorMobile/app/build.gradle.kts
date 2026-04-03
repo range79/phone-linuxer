@@ -9,7 +9,7 @@ plugins {
 
 
 android {
-    namespace = "com.range.phoneLinuxer"
+    namespace = "com.range.rangeEmulator"
     compileSdk {
         version = release(36)
     }
@@ -29,7 +29,7 @@ android {
         }
     }
     defaultConfig {
-        applicationId = "com.range.PhoneLinuxer"
+        applicationId = "com.range.rangeEmulator"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

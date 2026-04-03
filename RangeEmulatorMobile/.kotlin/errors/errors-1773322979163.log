@@ -1,5 +1,5 @@
 kotlin version: 2.0.21
-error message: org.jetbrains.kotlin.util.FileAnalysisException: While analysing /home/range79/workdir/phonelinuxer-full/android/app/src/main/java/com/range/phoneLinuxer/repository/LinuxRepository.kt:4:5: java.lang.IllegalArgumentException: source must not be null
+error message: org.jetbrains.kotlin.util.FileAnalysisException: While analysing /home/range79/workdir/phonelinuxer-full/android/app/src/main/java/com.range.rangeEmulator/repository/LinuxRepository.kt:4:5: java.lang.IllegalArgumentException: source must not be null
 	at org.jetbrains.kotlin.util.AnalysisExceptionsKt.wrapIntoFileAnalysisExceptionIfNeeded(AnalysisExceptions.kt:57)
 	at org.jetbrains.kotlin.fir.FirCliExceptionHandler.handleExceptionOnFileAnalysis(Utils.kt:249)
 	at org.jetbrains.kotlin.fir.pipeline.AnalyseKt.runCheckers(analyse.kt:46)

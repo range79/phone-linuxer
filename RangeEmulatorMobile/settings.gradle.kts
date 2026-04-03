@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PhoneLinuxer"
+rootProject.name = "RangeEmulator"
 include(":app")
