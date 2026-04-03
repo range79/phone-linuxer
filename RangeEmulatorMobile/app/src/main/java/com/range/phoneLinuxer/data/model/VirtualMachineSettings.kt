@@ -28,7 +28,7 @@ data class VirtualMachineSettings(
     val easyInstall: Boolean = false,
     val easyInstallSettings: EasyInstallSettings? = null,
     val networkMode: NetworkMode = NetworkMode.USER,
-    val diskAioMode: DiskAioMode = DiskAioMode.THREADS,
+    val tbSizeMB: Int = 512,
     val createdAt: Long = System.currentTimeMillis(),
     val state: VmState = VmState.INACTIVE,
 )
@@ -46,9 +46,9 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
 
     cmd.add("-accel")
     if (cpuModel == CpuModel.HOST) {
-        cmd.add("kvm:tcg,thread=multi,tb-size=2048")
+        cmd.add("kvm:tcg,thread=multi,tb-size=$tbSizeMB")
     } else {
-        cmd.add("tcg,thread=multi,tb-size=2048")
+        cmd.add("tcg,thread=multi,tb-size=$tbSizeMB")
     }
 
     cmd.add("-object")
@@ -61,10 +61,8 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
 
     if (isoUris.isNotEmpty() || isSetupMode || easyInstall) {
         isoUris.forEachIndexed { index, uri ->
-            val aio = diskAioMode.name.lowercase()
-            val cache = if (diskAioMode == DiskAioMode.IO_URING) "none" else "writeback"
             cmd.add("-drive")
-            cmd.add("file=$uri,format=raw,if=none,id=cd$index,readonly=on,cache=$cache,aio=$aio")
+            cmd.add("file=$uri,format=raw,if=none,id=cd$index,readonly=on,cache=writeback,aio=threads")
             cmd.add("-device")
             cmd.add("virtio-blk-pci,drive=cd$index,bootindex=${index},iothread=iothread0,disable-legacy=on,disable-modern=off")
         }
@@ -72,10 +70,8 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
 
     diskImgPath?.let {
         val formatName = diskFormat.name.lowercase()
-        val aio = diskAioMode.name.lowercase()
-        val cache = if (diskAioMode == DiskAioMode.IO_URING) "none" else "writeback"
         cmd.add("-drive")
-        cmd.add("file=$it,format=$formatName,if=none,id=drive0,cache=$cache,discard=on,detect-zeroes=on,aio=$aio")
+        cmd.add("file=$it,format=$formatName,if=none,id=drive0,cache=writeback,discard=on,detect-zeroes=on,aio=threads")
         cmd.add("-device")
         cmd.add("virtio-blk-pci,drive=drive0,bootindex=${isoUris.size + 10},iothread=iothread0,disable-legacy=on,disable-modern=off")
     }

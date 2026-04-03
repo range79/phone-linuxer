@@ -46,12 +46,19 @@ fun AddNewEmulatorScreen(
 
     var vmName by remember { mutableStateOf("") }
     var selectedCpu by remember { mutableStateOf(if (hasKvmSupport) CpuModel.HOST else CpuModel.MAX) }
-    var ramAmount by remember { mutableFloatStateOf((deviceMaxRam / 4f).coerceIn(512f, deviceMaxRam.toFloat())) }
-    var cpuCores by remember { mutableFloatStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
+    var ramAmount by remember { mutableStateOf((deviceMaxRam / 4f).coerceIn(512f, deviceMaxRam.toFloat())) }
+    var cpuCores by remember { mutableStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
+    val maxTbSize = remember { (deviceMaxRam - 512).coerceAtLeast(256) }
+    val tbSafeLimit = remember { deviceMaxRam / 3 }
+    val combinedSafeLimitMB = remember { 
+        if (deviceMaxRam > 8000) (deviceMaxRam * 0.90f).toInt() 
+        else (deviceMaxRam * 0.85f).toInt() 
+    }
+    var tbSize by remember { mutableStateOf(512f) }
+    var showTbWarning by remember { mutableStateOf(false) }
 
-    var diskSizeGb by remember { mutableFloatStateOf(8f) }
+    var diskSizeGb by remember { mutableStateOf(8f) }
     var selectedDiskFormat by remember { mutableStateOf(DiskFormat.QCOW2) }
-    var selectedAioMode by remember { mutableStateOf(DiskAioMode.THREADS) }
     var customDiskPath by remember { mutableStateOf(context.filesDir.absolutePath) }
     val isStorageDangerouslyHigh = diskSizeGb > safeLimit
 
@@ -90,6 +97,30 @@ fun AddNewEmulatorScreen(
         }
     }
 
+    fun performSave() {
+        onSave(VirtualMachineSettings(
+            vmName = vmName,
+            cpuModel = selectedCpu,
+            ramMB = ramAmount.toInt(),
+            cpuCores = cpuCores.toInt(),
+            isoUris = selectedIsos.map { it.toString() },
+            diskImgPath = "$customDiskPath/$vmName.${selectedDiskFormat.name.lowercase()}",
+            diskFormat = selectedDiskFormat,
+            diskSizeGB = diskSizeGb.toInt(),
+            screenWidth = if (selectedScreenType == ScreenType.SPICE) 0 else (screenWidth.toIntOrNull() ?: 1280),
+            screenHeight = if (selectedScreenType == ScreenType.SPICE) 0 else (screenHeight.toIntOrNull() ?: 720),
+            isGpuEnabled = isGpuEnabled,
+            screenType = selectedScreenType,
+            vncPort = vncPort.toIntOrNull() ?: 5900,
+            spicePort = spicePort.toIntOrNull() ?: 5901,
+            tbSizeMB = tbSize.toInt(),
+            easyInstall = isEasyInstallEnabled,
+            easyInstallSettings = if (isEasyInstallEnabled) {
+                EasyInstallSettings(ezUsername, ezPassword, selectedDE)
+            } else null
+        ))
+    }
+
     LaunchedEffect(isEasyInstallEnabled) {
         selectedScreenType = if (isEasyInstallEnabled) ScreenType.SPICE else ScreenType.VNC
     }
@@ -109,27 +140,11 @@ fun AddNewEmulatorScreen(
                                     Toast.makeText(context, "Cannot save: KVM is not supported!", Toast.LENGTH_LONG).show()
                                     return@Button
                                 }
-                                onSave(VirtualMachineSettings(
-                                    vmName = vmName,
-                                    cpuModel = selectedCpu,
-                                    ramMB = ramAmount.toInt(),
-                                    cpuCores = cpuCores.toInt(),
-                                    isoUris = selectedIsos.map { it.toString() },
-                                    diskImgPath = "$customDiskPath/$vmName.${selectedDiskFormat.name.lowercase()}",
-                                    diskFormat = selectedDiskFormat,
-                                    diskSizeGB = diskSizeGb.toInt(),
-                                    screenWidth = if (selectedScreenType == ScreenType.SPICE) 0 else (screenWidth.toIntOrNull() ?: 1280),
-                                    screenHeight = if (selectedScreenType == ScreenType.SPICE) 0 else (screenHeight.toIntOrNull() ?: 720),
-                                    isGpuEnabled = isGpuEnabled,
-                                    screenType = selectedScreenType,
-                                    vncPort = vncPort.toIntOrNull() ?: 5900,
-                                    spicePort = spicePort.toIntOrNull() ?: 5901,
-                                    diskAioMode = selectedAioMode,
-                                    easyInstall = isEasyInstallEnabled,
-                                    easyInstallSettings = if (isEasyInstallEnabled) {
-                                        EasyInstallSettings(ezUsername, ezPassword, selectedDE)
-                                    } else null
-                                ))
+                                if (tbSize > tbSafeLimit) {
+                                    showTbWarning = true
+                                } else {
+                                    performSave()
+                                }
                             }
                         },
                         enabled = vmName.isNotBlank() && !isSavingLocked && !isStorageDangerouslyHigh
@@ -140,6 +155,20 @@ fun AddNewEmulatorScreen(
             )
         }
     ) { padding ->
+        if (showTbWarning) {
+            AlertDialog(
+                onDismissRequest = { showTbWarning = false },
+                title = { Text("High TB-Size Warning") },
+                text = { Text("You have selected a very large TCG Cache (${tbSize.toInt()}MB). This exceeds the recommended safe limit (1/3 of RAM) and may cause your device to run out of memory or crash. Are you sure you want to proceed?") },
+                confirmButton = {
+                    TextButton(onClick = { showTbWarning = false; performSave() }) { Text("Proceed Anyway") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTbWarning = false }) { Text("Cancel") }
+                }
+            )
+        }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp)
@@ -181,54 +210,6 @@ fun AddNewEmulatorScreen(
                         color = if (isStorageDangerouslyHigh) Color.Red else MaterialTheme.colorScheme.outline,
                         style = MaterialTheme.typography.labelSmall
                     )
-
-                    Spacer(Modifier.height(16.dp))
-                    Text("Disk Performance (AIO Mode)", style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        "Threads: High compatibility, recommended for older devices.\n" +
-                        "IO_URING: The fastest performance mode (Android 11+).\n" +
-                        "Native: High speed Linux AIO, second choice after io_uring.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-                    var aioExpanded by remember { mutableStateOf(false) }
-                    ExposedDropdownMenuBox(
-                        expanded = aioExpanded,
-                        onExpandedChange = { aioExpanded = !aioExpanded }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedAioMode.name,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = aioExpanded) },
-                            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, true).fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = aioExpanded,
-                            onDismissRequest = { aioExpanded = false }
-                        ) {
-                            DiskAioMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(mode.name, fontWeight = FontWeight.Bold)
-                                            val desc = when(mode) {
-                                                DiskAioMode.THREADS -> "Default compatible mode (Standard for older Android)."
-                                                DiskAioMode.IO_URING -> "Modern high-speed mode (Recommended for Android 12+)."
-                                                DiskAioMode.NATIVE -> "Direct Linux AIO (Use if io_uring fails)."
-                                            }
-                                            Text(desc, style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    },
-                                    onClick = {
-                                        selectedAioMode = mode
-                                        aioExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
                 }
             }
 
@@ -353,8 +334,84 @@ fun AddNewEmulatorScreen(
                 }
             }
 
-            SettingSlider("RAM: ${ramAmount.toInt()} MB", ramAmount, { ramAmount = it }, 512f..deviceMaxRam.toFloat(), 10, Icons.Default.Memory)
-            SettingSlider("CPU Cores: ${cpuCores.toInt()}", cpuCores, { cpuCores = it }, 1f..deviceMaxCores.toFloat(), (deviceMaxCores - 1).coerceAtLeast(1).toInt(), Icons.Default.SettingsInputComponent)
+            SettingSlider(
+                title = "RAM: ${ramAmount.toInt()} MB", 
+                value = ramAmount, 
+                onValueChange = { newRam -> 
+                    ramAmount = newRam
+                    if (ramAmount + tbSize > combinedSafeLimitMB) {
+                        tbSize = (combinedSafeLimitMB - ramAmount).coerceIn(128f, maxTbSize.toFloat())
+                    }
+                }, 
+                valueRange = 512f..deviceMaxRam.toFloat(), 
+                steps = 10, 
+                icon = Icons.Default.Memory
+            )
+            SettingSlider(
+                title = "CPU Cores: ${cpuCores.toInt()}", 
+                value = cpuCores, 
+                onValueChange = { cpuCores = it }, 
+                valueRange = 1f..deviceMaxCores.toFloat(), 
+                steps = (deviceMaxCores - 1).coerceAtLeast(1).toInt(), 
+                icon = Icons.Default.SettingsInputComponent
+            )
+            
+            Spacer(Modifier.height(8.dp))
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = if (ramAmount + tbSize > combinedSafeLimitMB) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (ramAmount + tbSize > combinedSafeLimitMB) Icons.Default.Warning else Icons.Default.Info, 
+                        null,
+                        tint = if (ramAmount + tbSize > combinedSafeLimitMB) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Estimated Host Memory Usage", style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "${(ramAmount + tbSize).toInt()} MB / ${deviceMaxRam} MB",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (ramAmount + tbSize > combinedSafeLimitMB) {
+                            Text("Warning: High memory pressure. System may kill the app.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("Status: Safe levels. Sliders will auto-balance.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Text("TCG Translation Cache (TB-Size)", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "TB-Size stores translated guest code in RAM. A larger cache significantly improves emulation speed by reducing the need to re-translate code, but it increases the overall RAM consumption of the process.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            SettingSlider(
+                title = "TCG Cache (TB-Size): ${tbSize.toInt()} MB",
+                value = tbSize,
+                onValueChange = { newTb -> 
+                    tbSize = newTb
+                    if (ramAmount + tbSize > combinedSafeLimitMB) {
+                        ramAmount = (combinedSafeLimitMB - tbSize).coerceIn(512f, deviceMaxRam.toFloat())
+                    }
+                },
+                valueRange = 128f..maxTbSize.toFloat(),
+                steps = 10,
+                icon = Icons.Default.Speed
+            )
+            Text(
+                "Info: Larger cache is faster but uses more device RAM. Max allowed: ${maxTbSize}MB.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
 
             Spacer(Modifier.height(32.dp))
         }
