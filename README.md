@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/ff3987f6-e52d-4d09-8653-33a44f2d2614" width="200" height="200" alt="RangeEmulator Logo">
+</p>
+
 # RangeEmulator: Desktop-Class Virtualization on Your Android
 
 **RangeEmulator** is a powerful yet simple tool that lets you run full desktop operating systems like Linux and Windows directly on your Android phone. By using modern virtualization technology, it turns your mobile device into a portable workstation.
@@ -63,12 +67,4 @@ Each VM now has its own isolated log file. If something goes wrong, check the **
 
 ---
 
-## Build & Release (CI/CD)
-RangeEmulator is ready for automated builds. Simply add the following GitHub Secrets to your repository to enable signed APK releases:
-1. `SIGNING_KEY_STORE_BASE64`
-2. `SIGNING_STORE_PASSWORD`
-3. `SIGNING_KEY_ALIAS`
-4. `SIGNING_KEY_PASSWORD`
-
----
 *Developed by Range Development. Optimized for the future of mobile-desktop convergence.*
