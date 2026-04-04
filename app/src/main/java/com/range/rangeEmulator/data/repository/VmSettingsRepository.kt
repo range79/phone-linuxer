@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 interface VmSettingsRepository {
 
     fun findAllVms(): Flow<List<VirtualMachineSettings>>
+    suspend fun findAllVmsSync(): List<VirtualMachineSettings>
 
     suspend fun findVmById(id: String): VirtualMachineSettings?
 

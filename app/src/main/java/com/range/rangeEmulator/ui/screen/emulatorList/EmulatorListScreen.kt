@@ -256,7 +256,7 @@ fun VMCard(
 
                     FilledIconButton(
                         onClick = onStart,
-                        enabled = !isTransitioning,
+                        enabled = vm.state != VmState.STARTING,
                         modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = if (isRunning) MaterialTheme.colorScheme.error
@@ -295,7 +295,7 @@ fun VMCard(
                 )
                 CompactInfoChip(
                     Icons.Default.Storage, 
-                    "${vm.diskSizeGB}GB",
+                    "${vm.disks.sumOf { it.sizeGB }}GB",
                     tint = MaterialTheme.colorScheme.tertiary
                 )
                 if (vm.isoUris.isNotEmpty()) {

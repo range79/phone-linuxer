@@ -33,7 +33,7 @@ import com.range.rangeEmulator.data.enums.ScreenType
 import com.range.rangeEmulator.data.enums.VmState
 import com.range.rangeEmulator.ui.components.PerformanceDashboardCard
 import com.range.rangeEmulator.ui.screen.emulatorList.CompactInfoChip
-import com.range.rangeEmulator.util.HardwareUtil
+import com.range.rangeEmulator.util.SystemMonitor
 import com.range.rangeEmulator.util.NetworkUtils
 import com.range.rangeEmulator.viewModel.EmulatorViewModel
 import kotlinx.coroutines.delay
@@ -42,6 +42,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.range.rangeEmulator.util.HardwareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,6 +112,7 @@ fun VmControlScreen(
         var ramUsage by remember { mutableStateOf(0L to 1L) }
         var cpuTemp by remember { mutableIntStateOf(0) }
         var batteryTemp by remember { mutableIntStateOf(0) }
+        var thermalStatus by remember { mutableStateOf("Safe") }
 
         val lifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(lifecycleOwner) {
@@ -126,10 +128,11 @@ fun VmControlScreen(
         LaunchedEffect(isMonitoringEnabled) {
             if (isMonitoringEnabled) {
                 while (true) {
-                    cpuUsage = HardwareUtil.getCpuUsage()
+                    cpuUsage = SystemMonitor.getCpuUsage()
                     ramUsage = HardwareUtil.getMemoryInfo(context)
-                    cpuTemp = HardwareUtil.getCpuTemperature(context)
+                    cpuTemp = SystemMonitor.getCpuTemperature(context)
                     batteryTemp = HardwareUtil.getBatteryTemperature(context)
+                    thermalStatus = SystemMonitor.getThermalStatus(context)
                     delay(1500)
                 }
             }
@@ -157,6 +160,7 @@ fun VmControlScreen(
                 ramUsage = ramUsage,
                 cpuTemp = cpuTemp,
                 batteryTemp = batteryTemp,
+                thermalStatus = thermalStatus,
                 onToggleMonitor = { isMonitoringEnabled = it },
                 onRequestBatteryExemption = {
                     val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -221,7 +225,7 @@ fun VmControlScreen(
                         tint = if (vm.cpuModel == CpuModel.HOST) Color(0xFF4CAF50) else MaterialTheme.colorScheme.secondary
                     )
                     CompactInfoChip(Icons.Default.Memory, "${vm.ramMB}MB")
-                    CompactInfoChip(Icons.Default.Storage, "${vm.diskSizeGB}GB", tint = MaterialTheme.colorScheme.tertiary)
+                    CompactInfoChip(Icons.Default.Storage, "${vm.disks.sumOf { it.sizeGB }}GB", tint = MaterialTheme.colorScheme.tertiary)
                     if (vm.isoUris.isNotEmpty()) {
                         CompactInfoChip(Icons.Default.Album, "${vm.isoUris.size} ISO", tint = MaterialTheme.colorScheme.primary)
                     }

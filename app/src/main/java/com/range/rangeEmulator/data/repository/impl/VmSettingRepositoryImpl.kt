@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.range.rangeEmulator.data.model.VirtualMachineSettings
 import com.range.rangeEmulator.data.repository.VmSettingsRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
@@ -33,6 +34,9 @@ class VmSettingsRepositoryImpl(private val context: Context) : VmSettingsReposit
             emptyList()
         }
     }
+    
+    override suspend fun findAllVmsSync(): List<VirtualMachineSettings> = 
+        findAllVms().first() ?: emptyList()
 
     override suspend fun findVmById(id: String): VirtualMachineSettings? {
         return findAllVms().firstOrNull()?.find { it.id == id }
@@ -71,9 +75,9 @@ class VmSettingsRepositoryImpl(private val context: Context) : VmSettingsReposit
                 return@edit
             }
 
-            list.find { it.id == vmId }?.diskImgPath?.let { path ->
+            list.find { it.id == vmId }?.disks?.forEach { config ->
                 try {
-                    val file = File(path)
+                    val file = File(config.path)
                     if (file.exists()) file.delete()
                 } catch (e: Exception) {
                 }

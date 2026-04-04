@@ -93,40 +93,11 @@ object HardwareUtil {
         }
     }
 
-    fun getCpuUsage(): Int {
-        return try {
-            val reader = File("/proc/stat").bufferedReader()
-            val line = reader.readLine() ?: return 0
-            val parts = line.split("\\s+".toRegex())
-            val idle = parts[4].toLong()
-            val total = parts.subList(1, 8).sumOf { it.toLong() }
-            reader.close()
-            
-            ((total - idle) * 100 / total).toInt().coerceIn(0, 100)
-        } catch (t: Throwable) { 0 }
-    }
-
     fun getMemoryInfo(context: Context): Pair<Long, Long> {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val memoryInfo = android.app.ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
         return (memoryInfo.totalMem - memoryInfo.availMem) to memoryInfo.totalMem
-    }
-
-    fun getCpuTemperature(context: Context): Int {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val hpm = context.getSystemService(Context.HARDWARE_PROPERTIES_SERVICE) as? HardwarePropertiesManager
-                val temps = hpm?.getDeviceTemperatures(
-                    HardwarePropertiesManager.DEVICE_TEMPERATURE_CPU,
-                    HardwarePropertiesManager.TEMPERATURE_CURRENT
-                )
-                if (temps != null && temps.isNotEmpty() && temps[0] > 0) {
-                    return temps[0].toInt()
-                }
-            }
-            0
-        } catch (t: Throwable) { 0 }
     }
 
     fun getBatteryTemperature(context: Context): Int {

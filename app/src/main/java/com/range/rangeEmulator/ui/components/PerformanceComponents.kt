@@ -33,6 +33,7 @@ fun PerformanceDashboardCard(
     ramUsage: Pair<Long, Long>,
     cpuTemp: Int,
     batteryTemp: Int,
+    thermalStatus: String,
     onToggleMonitor: (Boolean) -> Unit,
     onRequestBatteryExemption: () -> Unit
 ) {
@@ -130,13 +131,13 @@ fun PerformanceDashboardCard(
                     ) {
                         ThermalGauge(
                             modifier = Modifier.weight(1f),
-                            label = "CPU",
-                            value = if (cpuTemp > 0) "$cpuTemp°C" else "Locked",
-                            progress = if (cpuTemp > 0) (cpuTemp / 100f).coerceIn(0f, 1f) else 0f,
+                            label = if (cpuTemp > 0) "CPU" else "System",
+                            value = if (cpuTemp > 0) "$cpuTemp°C" else (if (batteryTemp > 0) "$batteryTemp°C" else "Locked"),
+                            progress = if (cpuTemp > 0) (cpuTemp / 100f).coerceIn(0f, 1f) else (batteryTemp / 100f).coerceIn(0f, 1f),
                             icon = Icons.Default.Thermostat,
                             color = when {
-                                cpuTemp > 75 -> MaterialTheme.colorScheme.error
-                                cpuTemp > 50 -> Color(0xFFFF9800)
+                                cpuTemp > 75 || batteryTemp > 45 -> MaterialTheme.colorScheme.error
+                                cpuTemp > 50 || batteryTemp > 38 -> Color(0xFFFF9800)
                                 else -> Color(0xFF2196F3)
                             }
                         )
@@ -174,6 +175,25 @@ fun PerformanceDashboardCard(
                             progress = ramPercent,
                             color = if (ramPercent > 0.8) Color(0xFFFF9800) else Color(0xFF00BCD4)
                         )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Thermal State", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                thermalStatus, 
+                                style = MaterialTheme.typography.labelSmall, 
+                                fontWeight = FontWeight.ExtraBold,
+                                color = when(thermalStatus) {
+                                    "Safe", "Cool" -> Color(0xFF4CAF50)
+                                    "Moderate", "Warm" -> Color(0xFFFFC107)
+                                    "Throttling", "Critical" -> Color.Red
+                                    else -> MaterialTheme.colorScheme.primary
+                                }
+                            )
+                        }
                     }
                 }
 

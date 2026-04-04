@@ -66,21 +66,21 @@ class LinuxViewModel(application: Application) : AndroidViewModel(application) {
             ),
             com.range.rangeEmulator.data.model.LinuxDistro(
                 id = "UBUNTU",
-                name = "Ubuntu 24.04 (LTS)",
-                description = "Popular, stable and widely supported.",
-                url = "https://cdimage.ubuntu.com/ubuntu-server/noble/daily-live/current/noble-live-server-arm64.iso"
+                name = "Ubuntu 24.04.4 Desktop",
+                description = "The standard Ubuntu experience with GNOME desktop environment.",
+                url = "https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.4-desktop-arm64.iso"
             ),
             com.range.rangeEmulator.data.model.LinuxDistro(
                 id = "DEBIAN",
-                name = "Debian 12 (Stable)",
+                name = "Debian 13.4.0 (Stable)",
                 description = "The rock-solid foundation. Very stable and clean.",
-                url = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-12.5.0-arm64-netinst.iso"
+                url = "https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.4.0-arm64-netinst.iso"
             ),
             com.range.rangeEmulator.data.model.LinuxDistro(
                 id = "ALPINE",
-                name = "Alpine Linux",
+                name = "Alpine Linux 3.21.3",
                 description = "Tiny, lightning fast and secure. Boots in seconds.",
-                url = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-standard-3.19.1-aarch64.iso"
+                url = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-standard-3.21.3-aarch64.iso"
             )
         )
     )

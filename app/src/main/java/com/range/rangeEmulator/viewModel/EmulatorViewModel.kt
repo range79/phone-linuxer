@@ -52,6 +52,23 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
+    init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repeat(2) {
+                val currentVms = repository.findAllVmsSync()
+                currentVms.forEach { vm ->
+                    if (vm.state == VmState.RUNNING || vm.state == VmState.STARTING || vm.state == VmState.STOPPING) {
+                        if (!executor.isAlive(vm.id)) {
+                            updateVmState(vm.id, VmState.INACTIVE)
+                            Timber.tag("EmulatorViewModel").i("Synced stuck VM state for: ${vm.vmName}")
+                        }
+                    }
+                }
+                delay(2000)
+            }
+        }
+    }
+
     fun toggleVmState(settings: VirtualMachineSettings) {
         viewModelScope.launch {
             if (executor.isAlive(settings.id)) stopVm(settings.id)
@@ -72,8 +89,10 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
 
-                val correctedPath = settings.diskImgPath?.replace("com.range.RangeEmulator", "com.range.rangeEmulator")
-                var safeSettings = settings.copy(diskImgPath = correctedPath)
+                val correctedDisks = settings.disks.map { disk ->
+                    disk.copy(path = disk.path.replace("com.range.RangeEmulator", "com.range.rangeEmulator"))
+                }
+                var safeSettings = settings.copy(disks = correctedDisks)
 
                 val preparedIsos = safeSettings.isoUris.map { uri ->
                     com.range.rangeEmulator.util.UriHelper.getRealPathFromUri(getApplication(), uri)
@@ -90,7 +109,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 if (safeSettings != settings) repository.saveVm(safeSettings)
 
                 updateVmState(safeSettings.id, VmState.STARTING)
-                try { createDiskImageIfMissing(safeSettings) } catch (e: Exception) { Timber.e(e, "Pre-launch disk check failed") }
+                try { createDisksIfMissing(safeSettings) } catch (e: Exception) { Timber.e(e, "Pre-launch disk check failed") }
 
                 clearLogs(safeSettings.id)
                 appendLog(safeSettings.id, "--- Starting QEMU Engine ---")
@@ -145,6 +164,10 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     fun stopVm(vmId: String) {
         viewModelScope.launch {
             try {
+                if (!executor.isAlive(vmId)) {
+                    updateVmState(vmId, VmState.INACTIVE)
+                    return@launch
+                }
                 updateVmState(vmId, VmState.STOPPING)
                 appendLog(vmId, "--- Terminating VM ---")
                 executor.killProcess(vmId)
@@ -152,6 +175,7 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 if (!executor.hasRunningProcesses()) stopKeepAliveService()
             } catch (e: Exception) {
                 _uiEvent.send(UiEvent.Error("Stop error: ${e.message}"))
+                updateVmState(vmId, VmState.INACTIVE)
             }
         }
     }
@@ -160,9 +184,11 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isSavingVm.value = true
             try {
-                val correctedPath = settings.diskImgPath?.replace("com.range.RangeEmulator", "com.range.rangeEmulator")
-                val safeSettings = settings.copy(diskImgPath = correctedPath)
-                createDiskImageIfMissing(safeSettings)
+                val correctedDisks = settings.disks.map { disk ->
+                    disk.copy(path = disk.path.replace("com.range.RangeEmulator", "com.range.rangeEmulator"))
+                }
+                val safeSettings = settings.copy(disks = correctedDisks)
+                createDisksIfMissing(safeSettings)
                 repository.saveVm(safeSettings)
                 _uiEvent.send(UiEvent.SaveSuccess)
                 _editingVm.value = null
@@ -243,19 +269,36 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
         vms.value.find { it.id == vmId }?.let { repository.saveVm(it.copy(state = newState)) }
     }
 
-    private suspend fun createDiskImageIfMissing(settings: VirtualMachineSettings) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val path = settings.diskImgPath ?: return@withContext
-        val file = java.io.File(path)
-        file.parentFile?.mkdirs()
-        if (file.exists()) return@withContext
+    private suspend fun createDisksIfMissing(settings: VirtualMachineSettings) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        settings.disks.forEach { disk ->
+            val path = disk.path
+            val file = java.io.File(path)
+            file.parentFile?.mkdirs()
+            if (file.exists()) return@forEach
 
-        Timber.i("Creating ${settings.diskFormat.name} disk at $path (${settings.diskSizeGB}GB)")
+            Timber.i("Creating ${disk.format.name} disk at $path (${disk.sizeGB}GB)")
+            
+            val result = executor.createDiskImage(path, disk.format.name, disk.sizeGB)
+            
+            if (result.isFailure) {
+                val error = result.exceptionOrNull()?.message ?: "Unknown"
+                if (error.contains("not found")) {
+                    Timber.w("qemu-img not found, falling back to manual disk creation.")
+                    manualCreateDisk(file, disk)
+                } else {
+                    throw Exception("Disk creation failed for $path: $error")
+                }
+            }
+        }
+    }
+
+    private fun manualCreateDisk(file: java.io.File, disk: com.range.rangeEmulator.data.model.DiskConfig) {
         try {
-            val sizeBytes = settings.diskSizeGB * 1024L * 1024L * 1024L
+            val sizeBytes = disk.sizeGB * 1024L * 1024L * 1024L
             java.io.RandomAccessFile(file, "rw").use { raf ->
-                if (settings.diskFormat.name == "RAW") {
+                if (disk.format.name == "RAW") {
                     raf.setLength(sizeBytes)
-                } else if (settings.diskFormat.name == "QCOW2") {
+                } else if (disk.format.name == "QCOW2") {
                     raf.setLength(262144)
                     raf.seek(0)
                     raf.writeInt(0x514649fb); raf.writeInt(3); raf.writeLong(0)
@@ -265,13 +308,15 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                     raf.writeInt(l1Size); raf.writeLong(65536); raf.writeLong(131072)
                     raf.writeInt(1); raf.writeInt(0); raf.writeLong(0); raf.writeLong(0)
                     raf.writeLong(0); raf.writeLong(0); raf.writeInt(4); raf.writeInt(104)
+                    raf.seek(65536)
+                    val l1Table = ByteArray(l1Size * 8)
+                    raf.write(l1Table)
                     raf.seek(131072); raf.writeLong(196608)
                     raf.seek(196608); raf.writeShort(1); raf.writeShort(1); raf.writeShort(1); raf.writeShort(1)
                 }
             }
-            Timber.i("Disk creation successful: $path")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to create disk at $path")
+            Timber.e(e, "Manual disk creation failed for ${file.path}")
             throw e
         }
     }

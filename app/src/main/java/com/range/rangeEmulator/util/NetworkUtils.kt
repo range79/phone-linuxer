@@ -10,8 +10,9 @@ object NetworkUtils {
             for (intf in Collections.list(interfaces)) {
                 val addrs = Collections.list(intf.inetAddresses)
                 for (addr in addrs) {
-                    if (!addr.isLoopbackAddress && addr.hostAddress.contains(".")) {
-                        return addr.hostAddress?:"0.0.0.0"
+                    val host = addr.hostAddress
+                    if (!addr.isLoopbackAddress && host != null && host.contains(".")) {
+                        return host
                     }
                 }
             }

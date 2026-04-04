@@ -2,6 +2,7 @@ package com.range.rangeEmulator.ui.screen.emulatorList
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Color
 import com.range.rangeEmulator.data.enums.*
 import com.range.rangeEmulator.data.model.*
 import com.range.rangeEmulator.ui.screen.addNewEmulator.CpuModelDropdown
@@ -48,15 +51,48 @@ fun EditEmulatorScreen(
 
     var vmName by remember { mutableStateOf("") }
     var selectedCpu by remember { mutableStateOf(CpuModel.MAX) }
-    var ramAmount by remember { mutableFloatStateOf(1024f) }
-    var cpuCores by remember { mutableFloatStateOf(1f) }
+    var ramAmount by remember { mutableFloatStateOf((deviceMaxRam / 4f).coerceIn(512f, deviceMaxRam.toFloat())) }
+    var cpuCores by remember { mutableFloatStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
     var isGpuEnabled by remember { mutableStateOf(true) }
     var selectedOsType by remember { mutableStateOf(OsType.LINUX) }
     var selectedIsos by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val diskList = remember { mutableStateListOf<DiskConfig>() }
+    var showAddDiskDialog by remember { mutableStateOf(false) }
+
+    var newDiskSize by remember { mutableStateOf(10f) }
+    var newDiskFormat by remember { mutableStateOf(DiskFormat.QCOW2) }
+    var newDiskLabel by remember { mutableStateOf("") }
+    var customDiskPath by remember { mutableStateOf(context.filesDir.absolutePath) }
+    val availableSpace = remember { HardwareUtil.getAvailableInternalStorageGB(context) }
     
+    val existingDiskPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { resolvedUri ->
+            val path = resolvedUri.toString()
+            val fileName = resolvedUri.path?.substringAfterLast("/")?.substringBeforeLast(".") ?: "Existing Disk"
+            diskList.add(DiskConfig(label = fileName, path = path, format = DiskFormat.QCOW2, sizeGB = 0)) 
+            showAddDiskDialog = false
+        }
+    }
     val isoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { uri -> context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         selectedIsos = (selectedIsos + uris).distinct()
+    }
+
+    val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let { resolvedUri ->
+            val pathStr = resolvedUri.path ?: ""
+            if (pathStr.startsWith("/tree/primary:")) {
+                val folder = pathStr.substringAfter("/tree/primary:")
+                customDiskPath = if (folder.isNotEmpty()) "/storage/emulated/0/$folder" else "/storage/emulated/0"
+            } else if (pathStr.startsWith("/tree/") && pathStr.contains(":")) {
+                val volumeId = pathStr.substringAfter("/tree/").substringBefore(":")
+                val folder = pathStr.substringAfter(":")
+                val volPath = "/storage/$volumeId"
+                customDiskPath = if (folder.isNotEmpty()) "$volPath/$folder" else volPath
+            } else {
+                customDiskPath = context.filesDir.absolutePath
+            }
+        }
     }
 
     var screenWidth by remember { mutableStateOf("1280") }
@@ -65,6 +101,9 @@ fun EditEmulatorScreen(
     var vncPort by remember { mutableStateOf("5900") }
     var spicePort by remember { mutableStateOf("5901") }
     var selectedScreenType by remember { mutableStateOf(ScreenType.VNC) }
+    var isTitanModeEnabled by remember { mutableStateOf(false) }
+    var selectedDiskInterface by remember { mutableStateOf(DiskInterface.NVME) }
+    var showTitanWarning by remember { mutableStateOf(false) }
     val maxTbSize = remember { (deviceMaxRam - 512).coerceAtLeast(256) }
     val tbSafeLimit = remember { deviceMaxRam / 3 }
     val combinedSafeLimitMB = remember { 
@@ -89,6 +128,10 @@ fun EditEmulatorScreen(
             tbSize = vm.tbSizeMB.toFloat()
             selectedOsType = vm.osType
             selectedIsos = vm.isoUris.map { Uri.parse(it) }
+            isTitanModeEnabled = vm.isTitanModeEnabled
+            selectedDiskInterface = vm.diskInterface
+            diskList.clear()
+            diskList.addAll(vm.disks)
         }
     }
 
@@ -107,7 +150,10 @@ fun EditEmulatorScreen(
             vncPort = vncPort.toIntOrNull() ?: 5900,
             spicePort = spicePort.toIntOrNull() ?: 5901,
             tbSizeMB = tbSize.toInt(),
-            isoUris = selectedIsos.map { it.toString() }
+            isoUris = selectedIsos.map { it.toString() },
+            disks = diskList.toList(),
+            diskInterface = selectedDiskInterface,
+            isTitanModeEnabled = isTitanModeEnabled
         )?.let { onSave(it) }
     }
 
@@ -149,6 +195,72 @@ fun EditEmulatorScreen(
             )
         }
     ) { padding ->
+        if (showAddDiskDialog) {
+            AlertDialog(
+                onDismissRequest = { showAddDiskDialog = false },
+                title = { Text("Add Virtual Disk") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = newDiskLabel,
+                            onValueChange = { newDiskLabel = it },
+                            label = { Text("Disk Label (e.g. System, Games)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Text("Or create a new blank disk image:", style = MaterialTheme.typography.labelSmall)
+                        
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DiskFormat.entries.forEach { format ->
+                                FilterChip(
+                                    selected = newDiskFormat == format,
+                                    onClick = { newDiskFormat = format },
+                                    label = { Text(format.name) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        SettingSlider(
+                            title = "Size: ${newDiskSize.toInt()} GB",
+                            value = newDiskSize,
+                            onValueChange = { newDiskSize = it },
+                            valueRange = 2f..availableSpace.coerceAtLeast(10f).toFloat(),
+                            steps = 0,
+                            icon = Icons.Default.SdCard
+                        )
+                        
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { directoryPicker.launch(null) }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Folder, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Location", style = MaterialTheme.typography.labelSmall)
+                            }
+                            Button(onClick = { existingDiskPicker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1.5f)) {
+                                Icon(Icons.Default.FileUpload, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Select Existing", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Text("Current Path: $customDiskPath", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val finalLabel = newDiskLabel.ifBlank { "Disk ${diskList.size + 1}" }
+                        val fileName = "${vmName}_extra_${System.currentTimeMillis()}.${newDiskFormat.name.lowercase()}"
+                        diskList.add(DiskConfig(label = finalLabel, path = "$customDiskPath/$fileName", format = newDiskFormat, sizeGB = newDiskSize.toInt()))
+                        showAddDiskDialog = false
+                        newDiskLabel = ""
+                    }) { Text("Create & Add") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddDiskDialog = false }) { Text("Cancel") }
+                }
+            )
+        }
+
         if (showTbWarning) {
             AlertDialog(
                 onDismissRequest = { showTbWarning = false },
@@ -163,14 +275,45 @@ fun EditEmulatorScreen(
             )
         }
 
+        if (showTitanWarning) {
+            AlertDialog(
+                onDismissRequest = { showTitanWarning = false },
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, null, tint = Color.Red)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Titan Mode: Extreme Risk", color = Color.Red)
+                    }
+                },
+                text = { 
+                    Column {
+                        Text("Titan Mode enables dangerous performance optimizations:", fontWeight = FontWeight.Bold)
+                        Text("• cache=unsafe: Writes are not flushed to disk. A crash WILL result in data corruption.")
+                        Text("• packed=on: Experimental VirtIO optimizations.")
+                        Text("\nDo not use this for important data. Only for speed tests and throwaway VMs.")
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { isTitanModeEnabled = true; showTitanWarning = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) { Text("I Accept the Risk") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTitanWarning = false }) { Text("Cancel") }
+                }
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = vmName,
                 onValueChange = { vmName = it },
@@ -181,6 +324,64 @@ fun EditEmulatorScreen(
 
             SectionHeader("Operating System")
             OsSelector(selectedOs = selectedOsType, onOsSelected = { selectedOsType = it })
+
+            SectionHeader("Storage Management")
+            
+            if (selectedOsType == OsType.WINDOWS) {
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Disk Controller (Windows Only)", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (selectedDiskInterface == DiskInterface.NVME) 
+                                "NVMe: Compatible & Easy. No extra drivers needed." 
+                                else "VirtIO: Maximum Speed. Requires loading drivers manually.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DiskInterface.entries.forEach { iface ->
+                                FilterChip(
+                                    selected = selectedDiskInterface == iface,
+                                    onClick = { selectedDiskInterface = iface },
+                                    label = { Text(iface.name) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(onClick = { showAddDiskDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add Virtual Disk")
+            }
+
+            diskList.forEach { disk ->
+                OutlinedCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SdCard, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            val displayName = disk.label.ifBlank { disk.path.substringAfterLast("/") }
+                            Text(displayName, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (disk.sizeGB > 0) "${disk.sizeGB} GB • ${disk.format.name} • ${disk.path.substringBeforeLast("/")}"
+                                else "Existing Disk • ${disk.path}", 
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                        IconButton(onClick = { 
+                            if (diskList.size > 1) diskList.remove(disk)
+                            else Toast.makeText(context, "Cannot remove the only disk!", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.Delete, null, tint = Color.Red)
+                        }
+                    }
+                }
+            }
 
             SectionHeader("Display & Graphics")
 
@@ -268,8 +469,52 @@ fun EditEmulatorScreen(
                 Switch(checked = isGpuEnabled, onCheckedChange = { isGpuEnabled = it })
             }
 
-            SectionHeader("Resources")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Resources",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(
+                    onClick = {
+                        isTitanModeEnabled = true
+                        cpuCores = deviceMaxCores.toFloat()
+                        val targetTb = (deviceMaxRam * 0.20f).coerceIn(1024f, 4096f).coerceAtMost(maxTbSize.toFloat())
+                        tbSize = targetTb
+                        ramAmount = (combinedSafeLimitMB - targetTb).coerceIn(512f, deviceMaxRam.toFloat())
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Bolt, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Max Performance Preset")
+                }
+            }
             KvmStatusCard(hasKvmSupport)
+
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = if (isTitanModeEnabled) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(if (isTitanModeEnabled) 2.dp else 1.dp, if (isTitanModeEnabled) Color.Red else MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("TITAN MODE", fontWeight = FontWeight.ExtraBold, color = if (isTitanModeEnabled) Color.Red else MaterialTheme.colorScheme.onSurface)
+                        Text("Extreme performance, high data risk.", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Switch(
+                        checked = isTitanModeEnabled,
+                        onCheckedChange = { if (it) showTitanWarning = true else isTitanModeEnabled = false },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Red, checkedTrackColor = Color.Red.copy(alpha = 0.5f))
+                    )
+                }
+            }
 
             CpuModelDropdown(
                 selectedModel = selectedCpu,
@@ -296,7 +541,7 @@ fun EditEmulatorScreen(
                 value = cpuCores,
                 onValueChange = { cpuCores = it },
                 valueRange = 1f..deviceMaxCores.toFloat(),
-                steps = deviceMaxCores - 1,
+                steps = (deviceMaxCores - 1).coerceAtLeast(1),
                 icon = Icons.Default.SettingsInputComponent
             )
             
@@ -356,6 +601,7 @@ fun EditEmulatorScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

@@ -41,6 +41,65 @@ class EmulatorExecutor(private val context: Context) {
     suspend fun extractEngineZip(onProgress: (Int) -> Unit): Boolean =
         extractor.extract(onProgress)
 
+    suspend fun createDiskImage(
+        path: String,
+        format: String,
+        sizeGB: Int
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            libLinker.injectAndLink()
+            
+            val injectLibDir = libLinker.injectLibDir
+            val qemuImgFiles = File(context.filesDir, "qemu-img")
+            val qemuImgNative = File(context.applicationInfo.nativeLibraryDir, "qemu-img")
+            val qemuImgBinary = when {
+                qemuImgNative.exists() -> qemuImgNative
+                qemuImgFiles.exists() -> qemuImgFiles
+                else -> {
+                    val fallback = File(context.filesDir, "libqemu-img.so")
+                    if (fallback.exists()) fallback else null
+                }
+            } ?: return@withContext Result.failure(Exception("qemu-img binary not found"))
+
+            qemuImgBinary.setExecutable(true, false)
+
+            val cmd = mutableListOf<String>().apply {
+                val linker = if (System.getProperty("os.arch")?.contains("64") == true) "/system/bin/linker64" else "/system/bin/linker"
+                add(linker)
+                add(qemuImgBinary.absolutePath)
+                add("create")
+                add("-f")
+                add(format.lowercase())
+                add(path)
+                add("${sizeGB}G")
+            }
+
+            val pb = ProcessBuilder(cmd)
+            val env = pb.environment()
+            
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            env["LD_LIBRARY_PATH"] = "${injectLibDir.absolutePath}:${context.filesDir.absolutePath}:$nativeLibDir:/system/lib64:/vendor/lib64"
+            
+            val preloads = mutableListOf<String>()
+            listOf("libz.so.1", "libz.so", "libglib-2.0.so").forEach { name ->
+                val f = File(injectLibDir, name)
+                if (f.exists()) preloads.add(f.absolutePath)
+            }
+            if (preloads.isNotEmpty()) env["LD_PRELOAD"] = preloads.joinToString(":")
+
+            val process = pb.start()
+            val exitCode = process.waitFor()
+            
+            if (exitCode == 0) Result.success(Unit)
+            else {
+                val error = process.errorStream.bufferedReader().readText()
+                Result.failure(Exception("qemu-img failed ($exitCode): $error"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun executeCommand(
         vmId: String,
         fullCommand: List<String>,
@@ -124,19 +183,14 @@ class EmulatorExecutor(private val context: Context) {
                 wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RangeEmulator:VM_RUNNING").apply {
                     acquire()
                 }
-                Timber.tag(TAG).d("WakeLock acquired")
             }
 
             if (onExit != null) {
                 executorScope.launch {
                     try {
                         val exitCode = process.waitFor()
-                        if (exitCode != 0 && exitCode != 143 && exitCode != 137) {
-                            Timber.tag(TAG).e("VM $vmId exited with error code $exitCode")
-                        }
                         onExit(exitCode)
                     } catch (e: Exception) {
-                        Timber.tag(TAG).e(e, "VM $vmId waitFor failed")
                         onExit(-1)
                     }
                 }
@@ -144,7 +198,6 @@ class EmulatorExecutor(private val context: Context) {
 
             Result.success(1L)
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "executeCommand failed for $vmId")
             val flow = _logStreams.getOrPut(vmId) { MutableSharedFlow(replay = 100, extraBufferCapacity = 500) }
             executorScope.launch { flow.emit("LAUNCH ERROR: ${e.message}") }
             Result.failure(e)
@@ -153,12 +206,8 @@ class EmulatorExecutor(private val context: Context) {
 
     private fun launchPerformanceBooster(vmId: String, process: Process) = executorScope.launch {
         val pid = getProcessPid(process)
-        if (pid <= 0) {
-            Timber.tag(TAG).w("Could not find PID for VM $vmId; Turbo boost unavailable.")
-            return@launch
-        }
+        if (pid <= 0) return@launch
 
-        Timber.tag(TAG).i("Turbo Boost active for VM $vmId (PID $pid). Starting thread priority monitor.")
         val boostedTids = mutableSetOf<Int>()
         var adpfInitialized = false
 
@@ -170,10 +219,8 @@ class EmulatorExecutor(private val context: Context) {
                     
                     currentTids.forEach { tid ->
                         if (tid !in boostedTids) {
-                            // THREAD_PRIORITY_URGENT_AUDIO or -19 for extreme saturation
                             android.os.Process.setThreadPriority(tid, -19)
                             boostedTids.add(tid)
-                            Timber.tag(TAG).d("Turbo Boost: Applied priority -19 to thread $tid of VM $vmId")
                         }
                     }
 
@@ -188,10 +235,8 @@ class EmulatorExecutor(private val context: Context) {
                         com.range.rangeEmulator.util.PerformanceHintManagerHelper.reportHeavyWork()
                     }
                 }
-            } catch (e: Exception) {
-                Timber.tag(TAG).w("Turbo Boost monitor error: ${e.message}")
-            }
-            delay(3000) // Consistent 3s scan for multi-core saturation
+            } catch (e: Exception) {}
+            delay(3000)
         }
         
         if (adpfInitialized) {
@@ -202,11 +247,9 @@ class EmulatorExecutor(private val context: Context) {
     private fun getProcessPid(process: Process): Int {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Java 9+ API
                 val pidMethod = process.javaClass.getMethod("pid")
                 (pidMethod.invoke(process) as Long).toInt()
             } else {
-                // Fallback to reflection for older Android
                 val field = process.javaClass.getDeclaredField("pid")
                 field.isAccessible = true
                 field.getInt(process)
@@ -227,13 +270,11 @@ class EmulatorExecutor(private val context: Context) {
                         null
                     } ?: break
                     
-                    Timber.tag(TAG).d("[$vmId] $line")
                     flow.emit(line)
                 }
             }
         } catch (e: Exception) {
             if (e !is java.io.IOException && e !is java.util.concurrent.CancellationException) {
-                Timber.tag(TAG).e(e, "Log reader error for $vmId")
                 flow.emit("LOG READER ERROR: ${e.message}")
             }
         } finally { cleanup(vmId) }
@@ -250,7 +291,6 @@ class EmulatorExecutor(private val context: Context) {
                 }
             }
         } catch (t: Throwable) {
-            Timber.tag(TAG).e(t, "Kill process error")
         } finally { cleanup(vmId) }
     }
 
@@ -273,7 +313,6 @@ class EmulatorExecutor(private val context: Context) {
             wakeLock?.let {
                 if (it.isHeld) it.release()
                 wakeLock = null
-                Timber.tag(TAG).d("WakeLock released")
             }
         }
     }

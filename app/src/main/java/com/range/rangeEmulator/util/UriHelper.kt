@@ -1,4 +1,4 @@
-package com.range.rangeEmulator.util
+ package com.range.rangeEmulator.util
 
 import android.content.Context
 import android.net.Uri
@@ -11,8 +11,10 @@ object UriHelper {
     suspend fun getRealPathFromUri(context: Context, uriString: String): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (!uriString.startsWith("content://")) return@withContext uriString
 
+        getDirectPath(Uri.parse(uriString))?.let { return@withContext it }
+
         val uri = Uri.parse(uriString)
-        val fileName = getFileName(context, uri) ?: "temp_iso_${System.currentTimeMillis()}.iso"
+        val fileName = getFileName(context, uri) ?: "temp_${System.currentTimeMillis()}.bin"
         val destFile = File(context.cacheDir, fileName)
 
         if (destFile.exists() && destFile.length() > 0) {
@@ -22,7 +24,11 @@ object UriHelper {
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
+                    val buffer = ByteArray(256 * 1024)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                    }
                 }
             }
             return@withContext destFile.absolutePath
@@ -30,6 +36,25 @@ object UriHelper {
             Timber.e(e, "Failed to copy URI to cache: $uriString")
             uriString
         }
+    }
+
+    private fun getDirectPath(uri: Uri): String? {
+        val path = uri.path ?: return null
+        
+        if (uri.authority == "com.android.externalstorage.documents") {
+            val docId = path.substringAfterLast("/document/", "")
+            if (docId.startsWith("primary:")) {
+                val subPath = docId.substringAfter("primary:")
+                return "/storage/emulated/0/$subPath"
+            }
+            if (docId.contains(":")) {
+                val volumeId = docId.split(":")[0]
+                val subPath = docId.split(":")[1]
+                return "/storage/$volumeId/$subPath"
+            }
+        }
+        
+        return null
     }
 
     private fun getFileName(context: Context, uri: Uri): String? {
