@@ -1,6 +1,8 @@
 package com.range.rangeEmulator.data.executor
 
 import android.content.Context
+import android.os.Build
+import android.os.PowerManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,6 +20,9 @@ class EmulatorExecutor(private val context: Context) {
     private val runningProcesses = ConcurrentHashMap<String, Process>()
     private val logJobs = ConcurrentHashMap<String, Job>()
     private val _logStreams = ConcurrentHashMap<String, MutableSharedFlow<String>>()
+    
+    private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val libLinker = LibLinker(context)
     val downloader = EngineDownloader(context)
@@ -39,6 +44,7 @@ class EmulatorExecutor(private val context: Context) {
     suspend fun executeCommand(
         vmId: String,
         fullCommand: List<String>,
+        isTurboEnabled: Boolean = false,
         onExit: ((Int) -> Unit)? = null
     ): Result<Long> = withContext(Dispatchers.IO) {
         if (isAlive(vmId)) return@withContext Result.failure(Exception("Already running"))
@@ -110,6 +116,17 @@ class EmulatorExecutor(private val context: Context) {
             runningProcesses[vmId] = process
             logJobs[vmId] = launchLogReader(vmId, process.inputStream)
 
+            if (isTurboEnabled) {
+                launchPerformanceBooster(vmId, process)
+            }
+
+            if (wakeLock == null) {
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RangeEmulator:VM_RUNNING").apply {
+                    acquire()
+                }
+                Timber.tag(TAG).d("WakeLock acquired")
+            }
+
             if (onExit != null) {
                 executorScope.launch {
                     try {
@@ -134,19 +151,91 @@ class EmulatorExecutor(private val context: Context) {
         }
     }
 
+    private fun launchPerformanceBooster(vmId: String, process: Process) = executorScope.launch {
+        val pid = getProcessPid(process)
+        if (pid <= 0) {
+            Timber.tag(TAG).w("Could not find PID for VM $vmId; Turbo boost unavailable.")
+            return@launch
+        }
+
+        Timber.tag(TAG).i("Turbo Boost active for VM $vmId (PID $pid). Starting thread priority monitor.")
+        val boostedTids = mutableSetOf<Int>()
+        var adpfInitialized = false
+
+        while (isActive && isAlive(vmId)) {
+            try {
+                val taskDir = File("/proc/$pid/task")
+                if (taskDir.exists()) {
+                    val currentTids = taskDir.listFiles()?.mapNotNull { it.name.toIntOrNull() } ?: emptyList()
+                    
+                    currentTids.forEach { tid ->
+                        if (tid !in boostedTids) {
+                            // THREAD_PRIORITY_URGENT_AUDIO or -19 for extreme saturation
+                            android.os.Process.setThreadPriority(tid, -19)
+                            boostedTids.add(tid)
+                            Timber.tag(TAG).d("Turbo Boost: Applied priority -19 to thread $tid of VM $vmId")
+                        }
+                    }
+
+                    if (!adpfInitialized && currentTids.isNotEmpty()) {
+                        adpfInitialized = com.range.rangeEmulator.util.PerformanceHintManagerHelper.createPerformanceSession(
+                            context,
+                            currentTids.toIntArray()
+                        )
+                    }
+
+                    if (adpfInitialized) {
+                        com.range.rangeEmulator.util.PerformanceHintManagerHelper.reportHeavyWork()
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.tag(TAG).w("Turbo Boost monitor error: ${e.message}")
+            }
+            delay(3000) // Consistent 3s scan for multi-core saturation
+        }
+        
+        if (adpfInitialized) {
+            com.range.rangeEmulator.util.PerformanceHintManagerHelper.closeSession()
+        }
+    }
+
+    private fun getProcessPid(process: Process): Int {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Java 9+ API
+                val pidMethod = process.javaClass.getMethod("pid")
+                (pidMethod.invoke(process) as Long).toInt()
+            } else {
+                // Fallback to reflection for older Android
+                val field = process.javaClass.getDeclaredField("pid")
+                field.isAccessible = true
+                field.getInt(process)
+            }
+        } catch (e: Exception) {
+            -1
+        }
+    }
+
     private fun launchLogReader(vmId: String, inputStream: InputStream): Job = executorScope.launch {
         val flow = _logStreams.getOrPut(vmId) { MutableSharedFlow(replay = 100, extraBufferCapacity = 500) }
         try {
             inputStream.bufferedReader().use { reader ->
                 while (isActive) {
-                    val line = withContext(Dispatchers.IO) { reader.readLine() } ?: break
+                    val line = try {
+                        withContext(Dispatchers.IO) { reader.readLine() }
+                    } catch (e: java.io.IOException) {
+                        null
+                    } ?: break
+                    
                     Timber.tag(TAG).d("[$vmId] $line")
                     flow.emit(line)
                 }
             }
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "Log reader error for $vmId")
-            flow.emit("LOG READER ERROR: ${e.message}")
+            if (e !is java.io.IOException && e !is java.util.concurrent.CancellationException) {
+                Timber.tag(TAG).e(e, "Log reader error for $vmId")
+                flow.emit("LOG READER ERROR: ${e.message}")
+            }
         } finally { cleanup(vmId) }
     }
 
@@ -179,5 +268,13 @@ class EmulatorExecutor(private val context: Context) {
     private fun cleanup(vmId: String) {
         runningProcesses.remove(vmId)
         logJobs.remove(vmId)
+        
+        if (runningProcesses.isEmpty()) {
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+                wakeLock = null
+                Timber.tag(TAG).d("WakeLock released")
+            }
+        }
     }
 }

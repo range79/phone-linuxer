@@ -17,7 +17,7 @@ import com.range.rangeEmulator.data.model.AppSettings
 import com.range.rangeEmulator.data.model.PermissionState
 import com.range.rangeEmulator.data.repository.SettingsRepository
 import com.range.rangeEmulator.data.repository.impl.SettingsRepositoryImpl
-import com.range.rangeEmulator.ui.navigation.AppNavigation
+import com.range.rangeEmulator.viewModel.AppNavigation
 import com.range.rangeEmulator.ui.screen.PermissionDeniedScreen
 import com.range.rangeEmulator.ui.theme.RangeEmulatorTheme
 import com.range.rangeEmulator.util.AppLogCollector

@@ -1,4 +1,4 @@
-package com.range.rangeEmulator.ui.navigation
+package com.range.rangeEmulator.viewModel
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -11,16 +11,13 @@ import com.range.rangeEmulator.data.repository.SettingsRepository
 import com.range.rangeEmulator.ui.screen.WelcomeScreen
 import com.range.rangeEmulator.ui.screen.download.DownloadScreen
 import com.range.rangeEmulator.ui.screen.addNewEmulator.AddNewEmulatorScreen
-import com.range.rangeEmulator.ui.screen.emulator.VmControlScreen
+import com.range.rangeEmulator.ui.screen.emulatorControl.VmControlScreen
 import com.range.rangeEmulator.ui.screen.emulatorList.EditEmulatorScreen
 import com.range.rangeEmulator.ui.screen.emulatorList.EmulatorListScreen
 import com.range.rangeEmulator.ui.screen.log.LogScreen
-import com.range.rangeEmulator.ui.screen.log.QemuLogsScreen
+import com.range.rangeEmulator.ui.screen.QemuLogsScreen
 import com.range.rangeEmulator.ui.screen.settings.SettingsScreen
 import com.range.rangeEmulator.util.NavDebouncer
-import com.range.rangeEmulator.viewModel.LinuxViewModel
-import com.range.rangeEmulator.viewModel.EmulatorViewModel
-import com.range.rangeEmulator.viewModel.EngineViewModel
 
 object Screen {
     const val Welcome = "welcome"

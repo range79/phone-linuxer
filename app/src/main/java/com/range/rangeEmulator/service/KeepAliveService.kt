@@ -47,14 +47,12 @@ class KeepAliveService : Service() {
         val customText = intent?.getStringExtra(EXTRA_TEXT)
 
         val channelId = "KEEP_ALIVE_CHANNEL"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "Process Protection",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            channelId,
+            "Process Protection",
+            NotificationManager.IMPORTANCE_HIGH
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP

@@ -21,6 +21,13 @@ enum class CpuModel {
 
     BASE;
 
+    fun getArch(): String {
+        return when (this) {
+            HOST, MAX, CORTEX_A76, CORTEX_A72, CORTEX_A57, CORTEX_A53, NEOVERSE_N1 -> "aarch64"
+            else -> "x86_64"
+        }
+    }
+
     fun toQemuParam(): String {
         return when (this) {
             HOST -> "host"
@@ -36,18 +43,19 @@ enum class CpuModel {
     fun getPerformanceScore(): Int {
         return when (this) {
             HOST -> 100
-            MAX -> 82
-            NEOVERSE_N1 -> 78
-            CORTEX_A76 -> 75
-            CORTEX_A72 -> 68
-            BROADWELL -> 55
-            HASWELL -> 52
-            IVYBRIDGE -> 48
-            QEMU64 -> 45
-            CORTEX_A57 -> 42
-            CORTEX_A53 -> 30
-            PENTIUM3 -> 22
-            BASE -> 8
+            MAX -> 45
+            NEOVERSE_N1 -> 42
+            CORTEX_A76 -> 40
+            CORTEX_A72 -> 35
+            CORTEX_A57 -> 28
+            CORTEX_A53 -> 18
+            
+            BROADWELL -> 15   
+            HASWELL -> 12     
+            IVYBRIDGE -> 10   
+            QEMU64 -> 8       
+            PENTIUM3 -> 5     
+            BASE -> 2
         }
     }
 

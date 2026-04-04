@@ -1,19 +1,23 @@
 package com.range.rangeEmulator.viewModel
 
 import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.range.rangeEmulator.RangeEmulatorApp
 import com.range.rangeEmulator.data.enums.VmState
-import com.range.rangeEmulator.data.executor.EmulatorExecutor
 import com.range.rangeEmulator.data.model.VirtualMachineSettings
 import com.range.rangeEmulator.data.model.buildFullCommand
 import com.range.rangeEmulator.data.repository.impl.VmSettingsRepositoryImpl
-import android.content.Intent
-import com.range.rangeEmulator.RangeEmulatorApp
 import com.range.rangeEmulator.service.KeepAliveService
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -22,8 +26,8 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     private val repository = VmSettingsRepositoryImpl(application.applicationContext)
     private val executor = (application as RangeEmulatorApp).executor
 
-    private val _vmLogs = MutableStateFlow<Map<String, List<String>>>(emptyMap())
-    val vmLogs: StateFlow<Map<String, List<String>>> = _vmLogs.asStateFlow()
+    private val _vmLogs = androidx.compose.runtime.mutableStateMapOf<String, List<String>>()
+    val vmLogsMap: Map<String, List<String>> = _vmLogs
 
     private val _editingVm = MutableStateFlow<VirtualMachineSettings?>(null)
     val editingVm: StateFlow<VirtualMachineSettings?> = _editingVm.asStateFlow()
@@ -71,7 +75,6 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 val correctedPath = settings.diskImgPath?.replace("com.range.RangeEmulator", "com.range.rangeEmulator")
                 var safeSettings = settings.copy(diskImgPath = correctedPath)
 
-                appendLog(safeSettings.id, "Preparing ISO files (this may take a while)...")
                 val preparedIsos = safeSettings.isoUris.map { uri ->
                     com.range.rangeEmulator.util.UriHelper.getRealPathFromUri(getApplication(), uri)
                 }
@@ -102,7 +105,8 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
                 val result = executor.executeCommand(
                     vmId = safeSettings.id,
-                    fullCommand = safeSettings.buildFullCommand()
+                    fullCommand = safeSettings.buildFullCommand(),
+                    isTurboEnabled = safeSettings.isTurboEnabled
                 ) { exitCode ->
                     viewModelScope.launch {
                         val currentState = vms.value.find { it.id == safeSettings.id }?.state
@@ -183,6 +187,14 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setEditingVm(vm: VirtualMachineSettings?) { _editingVm.value = vm }
+    
+    fun updateTurboMode(vmId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            vms.value.find { it.id == vmId }?.let { vm ->
+                repository.saveVm(vm.copy(isTurboEnabled = enabled))
+            }
+        }
+    }
 
     fun loadVmForEditing(id: String) {
         viewModelScope.launch { _editingVm.emit(vms.value.find { it.id == id }) }
@@ -216,19 +228,15 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun appendLog(vmId: String, line: String) {
-        _vmLogs.update { currentMap ->
-            val history = currentMap[vmId] ?: emptyList()
-            if (history.isNotEmpty() && history.last() == line) {
-                currentMap 
-            } else {
-                val newList = (history + line).takeLast(500)
-                currentMap + (vmId to newList)
-            }
-        }
+        val history = _vmLogs[vmId] ?: emptyList()
+        if (history.isNotEmpty() && history.last() == line) return
+        
+        val newList = (history + line).takeLast(500)
+        _vmLogs[vmId] = newList
     }
 
     fun clearLogs(vmId: String) {
-        _vmLogs.update { it + (vmId to emptyList()) }
+        _vmLogs[vmId] = emptyList()
     }
 
     private suspend fun updateVmState(vmId: String, newState: VmState) {

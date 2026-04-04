@@ -1,4 +1,4 @@
-package com.range.rangeEmulator.ui.screen.log
+package com.range.rangeEmulator.ui.screen
 
 import android.content.ClipData
 import android.widget.Toast
@@ -33,7 +33,7 @@ fun QemuLogsScreen(
     viewModel: EmulatorViewModel,
     onBack: () -> Unit
 ) {
-    val vmLogsMap by viewModel.vmLogs.collectAsState()
+    val vmLogsMap = viewModel.vmLogsMap
     val logLines = vmLogsMap[vmId] ?: emptyList()
     val listState = rememberLazyListState()
 

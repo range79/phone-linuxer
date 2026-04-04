@@ -1,6 +1,10 @@
 package com.range.rangeEmulator.ui.screen.emulatorList
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,7 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.range.rangeEmulator.data.enums.*
 import com.range.rangeEmulator.data.model.*
 import com.range.rangeEmulator.ui.screen.addNewEmulator.CpuModelDropdown
+import com.range.rangeEmulator.ui.screen.addNewEmulator.ISOListItem
 import com.range.rangeEmulator.ui.screen.addNewEmulator.KvmStatusCard
+import com.range.rangeEmulator.ui.screen.addNewEmulator.OsSelector
 import com.range.rangeEmulator.ui.screen.addNewEmulator.SectionHeader
 import com.range.rangeEmulator.ui.screen.addNewEmulator.SettingSlider
 import com.range.rangeEmulator.util.HardwareUtil
@@ -38,12 +44,20 @@ fun EditEmulatorScreen(
     val deviceMaxCores = remember { HardwareUtil.getTotalCores() }
     val hasKvmSupport = remember { HardwareUtil.isKvmSupported() }
     val isGpuSupported = remember { HardwareUtil.isGpuAccelerationSupported(context) }
+    val isEngineGpuSupported = remember { HardwareUtil.isEngineVirglSupported(context) }
 
     var vmName by remember { mutableStateOf("") }
     var selectedCpu by remember { mutableStateOf(CpuModel.MAX) }
     var ramAmount by remember { mutableFloatStateOf(1024f) }
     var cpuCores by remember { mutableFloatStateOf(1f) }
     var isGpuEnabled by remember { mutableStateOf(true) }
+    var selectedOsType by remember { mutableStateOf(OsType.LINUX) }
+    var selectedIsos by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    
+    val isoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        uris.forEach { uri -> context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        selectedIsos = (selectedIsos + uris).distinct()
+    }
 
     var screenWidth by remember { mutableStateOf("1280") }
     var screenHeight by remember { mutableStateOf("720") }
@@ -73,6 +87,8 @@ fun EditEmulatorScreen(
             spicePort = vm.spicePort.toString()
             selectedScreenType = vm.screenType
             tbSize = vm.tbSizeMB.toFloat()
+            selectedOsType = vm.osType
+            selectedIsos = vm.isoUris.map { Uri.parse(it) }
         }
     }
 
@@ -80,6 +96,7 @@ fun EditEmulatorScreen(
         isSavingLocked = true
         editingVm?.copy(
             vmName = vmName,
+            osType = selectedOsType,
             cpuModel = selectedCpu,
             ramMB = ramAmount.toInt(),
             cpuCores = cpuCores.toInt(),
@@ -89,7 +106,8 @@ fun EditEmulatorScreen(
             screenHeight = if (selectedScreenType == ScreenType.SPICE) 0 else (screenHeight.toIntOrNull() ?: 720),
             vncPort = vncPort.toIntOrNull() ?: 5900,
             spicePort = spicePort.toIntOrNull() ?: 5901,
-            tbSizeMB = tbSize.toInt()
+            tbSizeMB = tbSize.toInt(),
+            isoUris = selectedIsos.map { it.toString() }
         )?.let { onSave(it) }
     }
 
@@ -161,6 +179,9 @@ fun EditEmulatorScreen(
                 leadingIcon = { Icon(Icons.Default.Label, null) }
             )
 
+            SectionHeader("Operating System")
+            OsSelector(selectedOs = selectedOsType, onOsSelected = { selectedOsType = it })
+
             SectionHeader("Display & Graphics")
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -216,6 +237,14 @@ fun EditEmulatorScreen(
                 )
             }
 
+            SectionHeader("Optical Drives (ISOs)")
+            Button(onClick = { isoPicker.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add ISO Image")
+            }
+            selectedIsos.forEach { uri -> ISOListItem(uri = uri, onRemove = { selectedIsos = selectedIsos - uri }) }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Terminal, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
@@ -223,15 +252,16 @@ fun EditEmulatorScreen(
                     Text("Enable Virtio-GPU")
                     if (!isGpuSupported) {
                         Text(
-                            "⚠️ Your device might not support Virtio-GPU acceleration. High-performance graphics may not work.",
+                            "⚠️ Hardware Alert: This phone does not support OpenGL ES 3.0+. 3D acceleration will crash or fail to start.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
                         )
                     } else {
                         Text(
-                            "Caution: Virtio-GPU requires host support. Disable if VM fails to start.",
+                            "Status: Supported. Virtio-GPU uses your phone's GPU. Disable if the VM becomes unstable.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -322,7 +352,7 @@ fun EditEmulatorScreen(
                 icon = Icons.Default.Speed
             )
             Text(
-                "Info: Larger cache is faster but uses more device RAM. Max allowed for this device: ${maxTbSize}MB.",
+                "Info: Larger cache is faster but uses more device RAM. Max allowed: ${maxTbSize}MB.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )

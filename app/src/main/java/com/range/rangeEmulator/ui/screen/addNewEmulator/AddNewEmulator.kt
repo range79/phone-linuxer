@@ -41,10 +41,12 @@ fun AddNewEmulatorScreen(
     val deviceMaxCores = remember { HardwareUtil.getTotalCores() }
     val hasKvmSupport = remember { HardwareUtil.isKvmSupported() }
     val isGpuSupported = remember { HardwareUtil.isGpuAccelerationSupported(context) }
+    val isEngineGpuSupported = remember { HardwareUtil.isEngineVirglSupported(context) }
     val safeLimit = remember { HardwareUtil.getSafeStorageLimitGB(context) }
     val availableSpace = remember { HardwareUtil.getAvailableInternalStorageGB(context) }
 
     var vmName by remember { mutableStateOf("") }
+    var selectedOsType by remember { mutableStateOf(OsType.LINUX) }
     var selectedCpu by remember { mutableStateOf(if (hasKvmSupport) CpuModel.HOST else CpuModel.MAX) }
     var ramAmount by remember { mutableStateOf((deviceMaxRam / 4f).coerceIn(512f, deviceMaxRam.toFloat())) }
     var cpuCores by remember { mutableStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
@@ -100,6 +102,7 @@ fun AddNewEmulatorScreen(
     fun performSave() {
         onSave(VirtualMachineSettings(
             vmName = vmName,
+            osType = selectedOsType,
             cpuModel = selectedCpu,
             ramMB = ramAmount.toInt(),
             cpuCores = cpuCores.toInt(),
@@ -183,6 +186,9 @@ fun AddNewEmulatorScreen(
                 leadingIcon = { Icon(Icons.Default.Label, null) }
             )
 
+            SectionHeader("Operating System")
+            OsSelector(selectedOs = selectedOsType, onOsSelected = { selectedOsType = it })
+
             SectionHeader("Storage & Security")
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -251,15 +257,16 @@ fun AddNewEmulatorScreen(
                     Text("Enable GPU Acceleration")
                     if (!isGpuSupported) {
                         Text(
-                            "⚠️ Your device might not support Virtio-GPU acceleration. High-performance graphics may not work.",
+                            "⚠️ Hardware Alert: This phone does not support OpenGL ES 3.0+. 3D acceleration will crash or fail to start.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
                         )
                     } else {
                         Text(
-                            "Caution: Virtio-GPU requires host support. Disable if VM fails to start.",
+                            "Status: Supported. Virtio-GPU uses your phone's GPU. Disable if the VM becomes unstable.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -273,7 +280,20 @@ fun AddNewEmulatorScreen(
 
             EasyInstallSection(isEasyInstallEnabled, { isEasyInstallEnabled = it }, ezUsername, { ezUsername = it }, ezPassword, { ezPassword = it }, selectedDE, { selectedDE = it })
 
-            SectionHeader("Hardware Resources")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Hardware Resources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = {
+                        ramAmount = (deviceMaxRam * 0.9f).coerceIn(512f, deviceMaxRam.toFloat())
+                        cpuCores = (deviceMaxCores - 1f).coerceAtLeast(1f)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Bolt, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Max Performance Preset")
+                }
+            }
             KvmStatusCard(hasKvmSupport)
 
             var cpuExpanded by remember { mutableStateOf(false) }
@@ -335,7 +355,7 @@ fun AddNewEmulatorScreen(
             }
 
             SettingSlider(
-                title = "RAM: ${ramAmount.toInt()} MB", 
+                title = "RAM: ${ramAmount.toInt()} / $deviceMaxRam MB", 
                 value = ramAmount, 
                 onValueChange = { newRam -> 
                     ramAmount = newRam
@@ -348,7 +368,7 @@ fun AddNewEmulatorScreen(
                 icon = Icons.Default.Memory
             )
             SettingSlider(
-                title = "CPU Cores: ${cpuCores.toInt()}", 
+                title = "CPU Cores: ${cpuCores.toInt()} / $deviceMaxCores Cores", 
                 value = cpuCores, 
                 onValueChange = { cpuCores = it }, 
                 valueRange = 1f..deviceMaxCores.toFloat(), 

@@ -1,27 +1,85 @@
 package com.range.rangeEmulator.ui.screen.emulatorList
 
-import androidx.compose.animation.*
+import android.content.Context
+import android.os.PowerManager
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeveloperBoard
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsInputComponent
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.range.rangeEmulator.data.enums.CpuModel
 import com.range.rangeEmulator.data.enums.ScreenType
 import com.range.rangeEmulator.data.enums.VmState
 import com.range.rangeEmulator.data.model.VirtualMachineSettings
+import com.range.rangeEmulator.util.HardwareUtil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +93,27 @@ fun EmulatorListScreen(
     vms: List<VirtualMachineSettings> = emptyList()
 ) {
     var vmToDelete by remember { mutableStateOf<VirtualMachineSettings?>(null) }
+    val context = LocalContext.current
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as PowerManager }
+    var isIgnoringBatteryOptimizations by remember { 
+        mutableStateOf(powerManager.isIgnoringBatteryOptimizations(context.packageName)) 
+    }
+    
+    var isTurboModeEnabled by remember { mutableStateOf(true) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isIgnoringBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(vms) {
         val runningVm = vms.find { it.state == VmState.RUNNING }
@@ -103,6 +182,7 @@ fun EmulatorListScreen(
     }
 }
 
+
 @Composable
 fun VMCard(
     vm: VirtualMachineSettings,
@@ -148,6 +228,20 @@ fun VMCard(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(Modifier.height(4.dp))
+                    val archLabel = vm.cpuModel.getArch().uppercase()
+                    Surface(
+                        color = if (archLabel == "X86_64") MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            archLabel,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (archLabel == "X86_64") MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
 
                 Row {
@@ -184,18 +278,52 @@ fun VMCard(
 
             Spacer(Modifier.height(16.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CompactInfoChip(Icons.Default.Memory, "${vm.ramMB}MB")
-                CompactInfoChip(Icons.Default.DeveloperBoard, "${vm.cpuCores} Core")
-                CompactInfoChip(Icons.Default.Tv, "${vm.screenWidth}x${vm.screenHeight}")
-                if (vm.isGpuEnabled) CompactInfoChip(Icons.Default.FlashOn, "GPU")
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val cpuLabel = if (vm.cpuModel == CpuModel.HOST) "KVM" else vm.cpuModel.name
+                CompactInfoChip(
+                    Icons.Default.Memory, 
+                    "${vm.ramMB}MB",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                CompactInfoChip(
+                    Icons.Default.DeveloperBoard, 
+                    cpuLabel,
+                    tint = if (vm.cpuModel == CpuModel.HOST) Color(0xFF4CAF50) else MaterialTheme.colorScheme.secondary
+                )
+                CompactInfoChip(
+                    Icons.Default.Storage, 
+                    "${vm.diskSizeGB}GB",
+                    tint = MaterialTheme.colorScheme.tertiary
+                )
+                if (vm.isoUris.isNotEmpty()) {
+                    CompactInfoChip(Icons.Default.Album, "${vm.isoUris.size} ISO", tint = MaterialTheme.colorScheme.primary)
+                }
+                CompactInfoChip(
+                    Icons.Default.SettingsInputComponent, 
+                    "${vm.cpuCores} Core"
+                )
+                val resLabel = if (vm.screenWidth == 0) "Auto" else "${vm.screenWidth}x${vm.screenHeight}"
+                CompactInfoChip(Icons.Default.Tv, resLabel)
+
+                if (vm.isGpuEnabled) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val isHwSupported = HardwareUtil.isGpuAccelerationSupported(context)
+                    CompactInfoChip(
+                        if (isHwSupported) Icons.Default.FlashOn else Icons.Default.FlashOff, 
+                        if (isHwSupported) "GPU" else "GPU⚠️", 
+                        tint = if (isHwSupported) Color(0xFFFFC107) else MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun CompactInfoChip(icon: ImageVector, label: String) {
+fun CompactInfoChip(icon: ImageVector, label: String, tint: Color = MaterialTheme.colorScheme.primary) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
         shape = CircleShape,
@@ -205,7 +333,7 @@ fun CompactInfoChip(icon: ImageVector, label: String) {
             Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, null, modifier = Modifier.size(14.dp), tint = tint)
             Text(
                 label,
                 modifier = Modifier.padding(start = 4.dp),
