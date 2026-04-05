@@ -1,5 +1,5 @@
 <p align="center">
- <img width="240" height="240" alt="Image" src="https://github.com/user-attachments/assets/4f4eb2b3-e367-49eb-b7a9-b8e390760840" /> 
+ <img width="200" height="200" alt="Image" src="https://github.com/user-attachments/assets/4f4eb2b3-e367-49eb-b7a9-b8e390760840" /> 
 </p>
 
 # RangeEmulator: Desktop-Class Virtualization on Your Android
