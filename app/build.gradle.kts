@@ -33,8 +33,8 @@ android {
         testApplicationId = "com.range.rangeEmulator.test"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -80,6 +80,7 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-buildtools:3.0.6")
     implementation("androidx.work:work-runtime-ktx:2.11.1")
     implementation(libs.androidx.compose.ui.text)
+    implementation(libs.androidx.core.splashscreen)
     // Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
     testImplementation("org.slf4j:slf4j-simple:2.0.17")
     // Source: https://mvnrepository.com/artifact/androidx.navigation/navigation-compose
