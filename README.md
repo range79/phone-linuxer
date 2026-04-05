@@ -59,11 +59,12 @@ Each VM now has its own isolated log file. If something goes wrong, check the **
 
 ---
 
-## Technical Overview
-- **Firmware:** Modern UEFI (EDK2) shell.
-- **Accelerated Graphics:** `virtio-gpu-pci` with OpenGL ES 3.0+ support.
-- **Connectivity:** Low-latency **SPICE** protocol (recommended) or VNC.
-- **Architecture:** Optimized for AArch64 (ARM64) host/guest parity.
+## Dependencies & Built-in Engine
+
+RangeEmulator automatically downloads and updates its core virtualization engine and required system libraries from our dedicated dependencies repository to ensure compatibility and performance.
+
+- **Engine Source:** [Range-Emulator-Dependencies](https://github.com/range79x/Range-Emulator-Dependencies)
+- **Included Components:** Optimized QEMU binaries, EDK2 UEFI firmware, and patched system libraries (`libz`, etc.) for Android environments.
 
 ---
 
