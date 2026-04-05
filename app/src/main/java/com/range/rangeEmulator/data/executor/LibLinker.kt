@@ -100,6 +100,7 @@ class LibLinker(private val context: Context) {
                     
                     var finalName = if (clean.contains(".so")) clean else "$clean.so"
                     finalName = finalName.replace("..", ".").removeSuffix(".")
+                    finalName = finalName.replace(".so.so", ".so")
 
                     if (finalName != fileName) {
                         createSymlink(file, finalName)
@@ -150,5 +151,17 @@ class LibLinker(private val context: Context) {
         } catch (e: Exception) {
             Timber.tag(TAG).v("Link fail: $linkName")
         }
+    }
+
+    fun getEnvironment(): Map<String, String> {
+        val env = mutableMapOf<String, String>()
+        val libDir = injectLibDir.absolutePath
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        env["LD_LIBRARY_PATH"] = "$libDir:$nativeLibDir"
+
+        val libz = File(injectLibDir, "libz.so")
+        if (libz.exists()) env["LD_PRELOAD"] = libz.absolutePath
+
+        return env
     }
 }

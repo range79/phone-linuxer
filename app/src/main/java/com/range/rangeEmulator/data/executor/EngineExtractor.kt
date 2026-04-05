@@ -9,9 +9,9 @@ import java.io.File
 
 class EngineExtractor(private val context: Context) {
 
-    suspend fun extract(onProgress: (Int) -> Unit): Boolean = withContext(Dispatchers.IO) {
+    suspend fun extract(fileName: String, onProgress: (Int) -> Unit): Boolean = withContext(Dispatchers.IO) {
         try {
-            val zipFile = File(context.filesDir, "engine.zip")
+            val zipFile = File(context.filesDir, fileName)
             if (!zipFile.exists()) return@withContext false
 
             val zf = java.util.zip.ZipFile(zipFile)

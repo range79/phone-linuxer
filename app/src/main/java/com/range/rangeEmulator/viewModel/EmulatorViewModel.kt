@@ -296,42 +296,10 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
             
             if (result.isFailure) {
                 val error = result.exceptionOrNull()?.message ?: "Unknown"
-                if (error.contains("not found")) {
-                    Timber.w("qemu-img not found, falling back to manual disk creation.")
-                    manualCreateDisk(file, disk)
-                } else {
-                    throw Exception("Disk creation failed for $path: $error")
-                }
+                appendLog(settings.id, "CRITICAL ERROR: Disk creation failed ($path): $error")
+                appendLog(settings.id, "Please ensure qemu-img is installed and dependencies are downloaded.")
+                throw Exception("qemu-img failed ($error). Cannot proceed without a valid disk image.")
             }
-        }
-    }
-
-    private fun manualCreateDisk(file: java.io.File, disk: com.range.rangeEmulator.data.model.DiskConfig) {
-        try {
-            val sizeBytes = disk.sizeGB * 1024L * 1024L * 1024L
-            java.io.RandomAccessFile(file, "rw").use { raf ->
-                if (disk.format.name == "RAW") {
-                    raf.setLength(sizeBytes)
-                } else if (disk.format.name == "QCOW2") {
-                    raf.setLength(262144)
-                    raf.seek(0)
-                    raf.writeInt(0x514649fb); raf.writeInt(3); raf.writeLong(0)
-                    raf.writeInt(0); raf.writeInt(16); raf.writeLong(sizeBytes)
-                    raf.writeInt(0)
-                    val l1Size = kotlin.math.ceil(sizeBytes.toDouble() / 536870912.0).toInt().coerceAtLeast(1)
-                    raf.writeInt(l1Size); raf.writeLong(65536); raf.writeLong(131072)
-                    raf.writeInt(1); raf.writeInt(0); raf.writeLong(0); raf.writeLong(0)
-                    raf.writeLong(0); raf.writeLong(0); raf.writeInt(4); raf.writeInt(104)
-                    raf.seek(65536)
-                    val l1Table = ByteArray(l1Size * 8)
-                    raf.write(l1Table)
-                    raf.seek(131072); raf.writeLong(196608)
-                    raf.seek(196608); raf.writeShort(1); raf.writeShort(1); raf.writeShort(1); raf.writeShort(1)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Manual disk creation failed for ${file.path}")
-            throw e
         }
     }
 }

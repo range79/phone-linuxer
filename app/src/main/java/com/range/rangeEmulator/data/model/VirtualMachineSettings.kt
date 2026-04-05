@@ -135,7 +135,7 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
         } else {
             val vectors = cpuCores * 2 + 2
             val packed = if (isTitanModeEnabled) ",packed=on" else ""
-            val blockSize = if (isArm) 4096 else 512
+            val blockSize = 512
             cmd.add("virtio-blk-pci,drive=$driveId,bootindex=${isoUris.size + 10 + index},iothread=iothread0,num-queues=$cpuCores,vectors=$vectors,logical_block_size=$blockSize,physical_block_size=$blockSize$packed,disable-legacy=on,disable-modern=off")
         }
     }
@@ -181,7 +181,7 @@ private fun VirtualMachineSettings.getNetworkArgs(): List<String> {
     when (networkMode) {
         NetworkMode.USER -> {
             args.add("-netdev")
-            args.add("user,id=net0,hostfwd=tcp::$sshPort-:22,dns=8.8.8.8,dns=1.1.1.1")
+            args.add("user,id=net0,net=10.0.2.0/24,dhcpstart=10.0.2.15,dns=1.1.1.1,dns=8.8.8.8,hostfwd=tcp::$sshPort-:22")
             args.add("-device")
             
             val netDevice = if (osType == OsType.WINDOWS) {

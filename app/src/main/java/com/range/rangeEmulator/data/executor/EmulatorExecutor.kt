@@ -32,14 +32,15 @@ class EmulatorExecutor(private val context: Context) {
         MutableSharedFlow(replay = 100, extraBufferCapacity = 500)
     }.asSharedFlow()
 
-    suspend fun downloadEngineZip(
+    suspend fun downloadZip(
         url: String,
+        targetFileName: String,
         allowMobileData: Boolean,
         onProgress: (Long, Long, Boolean, Boolean) -> Unit
-    ) = downloader.download(url, allowMobileData, onProgress)
+    ) = downloader.download(url, targetFileName, allowMobileData, onProgress)
 
-    suspend fun extractEngineZip(onProgress: (Int) -> Unit): Boolean =
-        extractor.extract(onProgress)
+    suspend fun extractZip(fileName: String, onProgress: (Int) -> Unit): Boolean =
+        extractor.extract(fileName, onProgress)
 
     suspend fun createDiskImage(
         path: String,
@@ -50,15 +51,17 @@ class EmulatorExecutor(private val context: Context) {
             libLinker.injectAndLink()
             
             val injectLibDir = libLinker.injectLibDir
-            val qemuImgFiles = File(context.filesDir, "qemu-img")
             val qemuImgNative = File(context.applicationInfo.nativeLibraryDir, "qemu-img")
+            val qemuImgLibNative = File(context.applicationInfo.nativeLibraryDir, "libqemu-img.so")
+            val qemuImgFiles = File(context.filesDir, "qemu-img")
+            val qemuImgLibFiles = File(context.filesDir, "libqemu-img.so")
+            
             val qemuImgBinary = when {
                 qemuImgNative.exists() -> qemuImgNative
+                qemuImgLibNative.exists() -> qemuImgLibNative
                 qemuImgFiles.exists() -> qemuImgFiles
-                else -> {
-                    val fallback = File(context.filesDir, "libqemu-img.so")
-                    if (fallback.exists()) fallback else null
-                }
+                qemuImgLibFiles.exists() -> qemuImgLibFiles
+                else -> null
             } ?: return@withContext Result.failure(Exception("qemu-img binary not found"))
 
             qemuImgBinary.setExecutable(true, false)
@@ -81,7 +84,16 @@ class EmulatorExecutor(private val context: Context) {
             env["LD_LIBRARY_PATH"] = "${injectLibDir.absolutePath}:${context.filesDir.absolutePath}:$nativeLibDir:/system/lib64:/vendor/lib64"
             
             val preloads = mutableListOf<String>()
-            listOf("libz.so.1", "libz.so", "libglib-2.0.so").forEach { name ->
+            val criticalLibs = listOf(
+                "libz.so.1", "libz.so",
+                "libnettle.so.8", "libnettle.so",
+                "libhogweed.so.6", "libhogweed.so",
+                "libgmp.so",
+                "libidn2.so", "libunistring.so",
+                "libgnutls.so.30", "libgnutls.so",
+                "libglib-2.0.so.0", "libglib-2.0.so"
+            )
+            criticalLibs.forEach { name ->
                 val f = File(injectLibDir, name)
                 if (f.exists()) preloads.add(f.absolutePath)
             }
@@ -150,7 +162,12 @@ class EmulatorExecutor(private val context: Context) {
                 "libgmp.so",
                 "libidn2.so", "libunistring.so",
                 "libgnutls.so.30", "libgnutls.so",
-                "libglib-2.0.so.0", "libglib-2.0.so"
+                "libglib-2.0.so.0", "libglib-2.0.so",
+                "libpcre2-8.so.0", "libpcre2-8.so",
+                "libgthread-2.0.so.0", "libgthread-2.0.so",
+                "libcurl.so", "libssh.so",
+                "libzstd.so.1", "libzstd.so",
+                "libbz2.so.1.0", "libbz2.so"
             )
 
             criticalLibs.forEach { name ->

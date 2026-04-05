@@ -49,6 +49,9 @@ class EngineViewModel(application: Application) : AndroidViewModel(application) 
     private val _engineTargetSizeMB = MutableStateFlow("...")
     val engineTargetSizeMB: StateFlow<String> = _engineTargetSizeMB.asStateFlow()
 
+    private val _toolsTargetUrl = MutableStateFlow("")
+    val toolsTargetUrl: StateFlow<String> = _toolsTargetUrl.asStateFlow()
+
     private val _isEnginePaused = MutableStateFlow(false)
     val isEnginePaused: StateFlow<Boolean> = _isEnginePaused.asStateFlow()
 
@@ -88,27 +91,44 @@ class EngineViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 val tagRegex = """"tag_name"\s*:\s*"([^"]+)"""".toRegex()
-                val urlRegex = """"browser_download_url"\s*:\s*"([^"]+Range-Emulator-Dependencies\.zip)"""".toRegex()
-                val sizeRegex = """"size"\s*:\s*(\d+)""".toRegex()
-
-                val urlMatch = urlRegex.find(response)
-                val sizeMatch = sizeRegex.find(response)
                 val tagMatch = tagRegex.find(response)
+                tagMatch?.groupValues?.get(1)?.let { tag ->
+                    prefs.edit().putString("engine_target_tag", tag).apply()
+                }
 
-                if (urlMatch != null) {
-                    _engineTargetUrl.value = urlMatch.groupValues[1]
-                    tagMatch?.groupValues?.get(1)?.let { tag ->
-                        prefs.edit().putString("engine_target_tag", tag).apply()
+                val assetsRegex = """\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"size"\s*:\s*(\d+)[^{}]*"browser_download_url"\s*:\s*"([^"]+)"[^{}]*\}""".toRegex()
+                val matches = assetsRegex.findAll(response)
+                
+                var engineUrl = ""
+                var engineSize = "107"
+                var toolsUrl = ""
+
+                matches.forEach { match ->
+                    val name = match.groupValues[1]
+                    val size = match.groupValues[2]
+                    val downloadUrl = match.groupValues[3]
+
+                    if (name.contains("Range-Emulator-Dependencies.zip")) {
+                        engineUrl = downloadUrl
+                        engineSize = (size.toLongOrNull()?.let { it / (1024 * 1024) } ?: 107).toString()
+                    } else if (name.contains("Range-Emulator-Qemu-Img.zip")) {
+                        toolsUrl = downloadUrl
                     }
-                    _engineTargetSizeMB.value = sizeMatch?.groupValues?.get(1)
-                        ?.toLongOrNull()?.let { "${it / (1024 * 1024)}" } ?: "107"
+                }
+
+                if (engineUrl.isNotEmpty()) {
+                    _engineTargetUrl.value = engineUrl
+                    _toolsTargetUrl.value = toolsUrl
+                    _engineTargetSizeMB.value = engineSize
                 } else {
                     _engineTargetUrl.value = "https://github.com/range79x/Range-Emulator-Dependencies/releases/latest/download/Range-Emulator-Dependencies.zip"
+                    _toolsTargetUrl.value = "https://github.com/range79x/Range-Emulator-Dependencies/releases/latest/download/Range-Emulator-Qemu-Img.zip"
                     _engineTargetSizeMB.value = "107"
                 }
                 _engineDownloadStatus.value = "Idle"
             } catch (e: Exception) {
                 _engineTargetUrl.value = "https://github.com/range79x/Range-Emulator-Dependencies/releases/latest/download/Range-Emulator-Dependencies.zip"
+                _toolsTargetUrl.value = "https://github.com/range79x/Range-Emulator-Dependencies/releases/latest/download/Range-Emulator-Qemu-Img.zip"
                 _engineTargetSizeMB.value = "107"
                 _engineDownloadStatus.value = "Idle"
             }
@@ -132,15 +152,15 @@ class EngineViewModel(application: Application) : AndroidViewModel(application) 
                 }
 
                 val tagRegex = """"tag_name"\s*:\s*"([^"]+)"""".toRegex()
-                val urlRegex = """"browser_download_url"\s*:\s*"([^"]+Range-Emulator-Dependencies\.zip)"""".toRegex()
-                val sizeRegex = """"size"\s*:\s*(\d+)""".toRegex()
+                val assetsRegex = """\{[^{}]*"name"\s*:\s*"([^"]+Dependencies\.zip)"[^{}]*"size"\s*:\s*(\d+)[^{}]*"browser_download_url"\s*:\s*"([^"]+)"[^{}]*\}""".toRegex()
 
                 val latestTag = tagRegex.find(response)?.groupValues?.get(1) ?: return@launch
+                val assetMatch = assetsRegex.find(response)
                 val installedTag = prefs.getString("installed_engine_version", "") ?: ""
 
-                if (installedTag.isNotEmpty() && latestTag != installedTag) {
-                    val downloadUrl = urlRegex.find(response)?.groupValues?.get(1) ?: return@launch
-                    val sizeMB = sizeRegex.find(response)?.groupValues?.get(1)?.toLongOrNull()
+                if (installedTag.isNotEmpty() && latestTag != installedTag && assetMatch != null) {
+                    val downloadUrl = assetMatch.groupValues[3]
+                    val sizeMB = assetMatch.groupValues[2].toLongOrNull()
                         ?.let { "${it / (1024 * 1024)}" } ?: "?"
                     _event.send(EngineEvent.UpdateAvailable(latestTag, downloadUrl, sizeMB))
                 }
@@ -199,23 +219,23 @@ class EngineViewModel(application: Application) : AndroidViewModel(application) 
             startKeepAlive()
             val startTime = System.currentTimeMillis()
 
-            executor.downloadEngineZip(targetUrl, allowMobile) { downloaded, total, isError, mobileRestricted ->
+            executor.downloadZip(targetUrl, "engine.zip", allowMobile) { downloaded, total, isError, mobileRestricted ->
                 if (mobileRestricted) {
                     _showMobileDataWarning.value = true
                     _isEnginePaused.value = true
                     _isEngineDownloading.value = false
                     stopKeepAlive()
-                    return@downloadEngineZip
+                    return@downloadZip
                 }
 
                 if (isError) {
-                    _engineDownloadStatus.value = "Error: Connection Lost"
+                    _engineDownloadStatus.value = "Error: Engine Connection Lost"
                     _isEnginePaused.value = true
                     stopKeepAlive()
                 } else if (!_isEnginePaused.value) {
                     val progress = if (total > 0) ((downloaded * 100) / total).toInt() else 0
                     _engineDownloadProgress.value = progress
-                    _engineDownloadStatus.value = "Downloading... $progress%"
+                    _engineDownloadStatus.value = "Downloading Engine... $progress%"
 
                     val timeSec = (System.currentTimeMillis() - startTime) / 1000.0
                     if (timeSec > 0.5) {
@@ -236,25 +256,55 @@ class EngineViewModel(application: Application) : AndroidViewModel(application) 
                     }
 
                     if (progress == 100) {
-                        _engineDownloadStatus.value = "Download Finished. Extracting..."
+                        _engineDownloadStatus.value = "Engine Download Finished. Extracting..."
                         _engineDownloadSpeed.value = ""
                         _engineRemainingTime.value = ""
 
                         viewModelScope.launch {
-                            val success = executor.extractEngineZip { extractProgress ->
+                            val success = executor.extractZip("engine.zip") { extractProgress ->
                                 _engineDownloadProgress.value = extractProgress
-                                _engineDownloadStatus.value = "Extracting... $extractProgress%"
+                                _engineDownloadStatus.value = "Extracting Engine... $extractProgress%"
                             }
                             if (success) {
-                                _engineDownloadStatus.value = "Download Finished"
-                                _isEngineDownloaded.value = true
-                                _isEngineDownloading.value = false
-                                stopKeepAlive()
-                                val installedTag = prefs.getString("engine_target_tag", "") ?: ""
-                                if (installedTag.isNotEmpty()) saveInstalledVersion(installedTag)
-                                _event.send(EngineEvent.DownloadComplete)
+                                // Now download tools
+                                val toolsUrl = _toolsTargetUrl.value.ifEmpty { 
+                                    targetUrl.replace("Range-Emulator-Dependencies.zip", "Range-Emulator-Qemu-Img.zip")
+                                }
+                                _engineDownloadStatus.value = "Downloading QEMU-img Tools..."
+                                executor.downloadZip(toolsUrl, "qemu_img_deps.zip", allowMobile) { d, t, err, res ->
+                                    if (!err && !res) {
+                                        val p = if (t > 0) ((d * 100) / t).toInt() else 0
+                                        _engineDownloadProgress.value = p
+                                        _engineDownloadStatus.value = "Downloading Tools... $p%"
+                                        if (p == 100) {
+                                            viewModelScope.launch {
+                                                val toolsSuccess = executor.extractZip("qemu_img_deps.zip") { ep ->
+                                                    _engineDownloadProgress.value = ep
+                                                    _engineDownloadStatus.value = "Extracting Tools... $ep%"
+                                                }
+                                                if (toolsSuccess) {
+                                                    _engineDownloadStatus.value = "Download Finished"
+                                                    _isEngineDownloaded.value = true
+                                                    _isEngineDownloading.value = false
+                                                    stopKeepAlive()
+                                                    val installedTag = prefs.getString("engine_target_tag", "") ?: ""
+                                                    if (installedTag.isNotEmpty()) saveInstalledVersion(installedTag)
+                                                    _event.send(EngineEvent.DownloadComplete)
+                                                } else {
+                                                    _engineDownloadStatus.value = "Tools Extraction Failed!"
+                                                    _isEnginePaused.value = true
+                                                    stopKeepAlive()
+                                                }
+                                            }
+                                        }
+                                    } else if (err) {
+                                        _engineDownloadStatus.value = "Tools Download Failed"
+                                        _isEnginePaused.value = true
+                                        stopKeepAlive()
+                                    }
+                                }
                             } else {
-                                _engineDownloadStatus.value = "Extraction Failed!"
+                                _engineDownloadStatus.value = "Engine Extraction Failed!"
                                 _isEnginePaused.value = true
                                 stopKeepAlive()
                             }

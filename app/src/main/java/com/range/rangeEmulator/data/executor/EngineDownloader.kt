@@ -16,6 +16,7 @@ class EngineDownloader(private val context: Context) {
 
     suspend fun download(
         url: String,
+        targetFileName: String,
         allowMobileData: Boolean,
         onProgress: (Long, Long, Boolean, Boolean) -> Unit
     ) {
@@ -24,7 +25,7 @@ class EngineDownloader(private val context: Context) {
                 onProgress(0, 0, false, true)
                 return
             }
-            val zipFile = File(context.filesDir, "engine.zip")
+            val zipFile = File(context.filesDir, targetFileName)
             val startByte = if (zipFile.exists()) zipFile.length() else 0L
 
             var currentStartByte = startByte
