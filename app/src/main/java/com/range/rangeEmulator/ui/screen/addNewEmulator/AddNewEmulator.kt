@@ -318,27 +318,25 @@ fun AddNewEmulatorScreen(
 
             SectionHeader("Storage Management")
             
-            if (selectedOsType == OsType.WINDOWS) {
-                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Disk Controller (Windows Only)", fontWeight = FontWeight.Bold)
-                        Text(
-                            text = if (selectedDiskInterface == DiskInterface.NVME) 
-                                "NVMe: Compatible & Easy. No extra drivers needed." 
-                                else "VirtIO: Maximum Speed. Requires loading drivers manually.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DiskInterface.entries.forEach { iface ->
-                                FilterChip(
-                                    selected = selectedDiskInterface == iface,
-                                    onClick = { selectedDiskInterface = iface },
-                                    label = { Text(iface.name) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Disk Controller", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (selectedDiskInterface == DiskInterface.NVME) 
+                            "NVMe: Compatible & Easy. No extra drivers needed." 
+                            else "VirtIO: Maximum Speed. Requires loading drivers manually.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DiskInterface.entries.forEach { iface ->
+                            FilterChip(
+                                selected = selectedDiskInterface == iface,
+                                onClick = { selectedDiskInterface = iface },
+                                label = { Text(iface.name) },
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
