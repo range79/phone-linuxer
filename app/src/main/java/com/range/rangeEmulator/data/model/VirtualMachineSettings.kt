@@ -42,12 +42,13 @@ data class VirtualMachineSettings(
     val tbSizeMB: Int = 512,
     val isTurboEnabled: Boolean = true,
     val isTitanModeEnabled: Boolean = false,
+    val isTpmEnabled: Boolean = false,
     val sshPort: Int = 2222,
     val createdAt: Long = System.currentTimeMillis(),
     val state: VmState = VmState.INACTIVE,
 )
 
-fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<String> {
+fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetupMode: Boolean = false): List<String> {
     val cmd = mutableListOf<String>()
 
     cmd.add("qemu_executable")
@@ -94,7 +95,7 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
     cmd.add("-device")
     cmd.add("qemu-xhci,id=usb")
     cmd.add("-device")
-    cmd.add("virtio-scsi-pci,id=scsi0")
+    cmd.add("virtio-scsi-pci,id=scsi0,iothread=iothread0")
 
     if (cpuCores > 1) {
         cmd.add("-smp")
@@ -113,10 +114,20 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
     if (isoUris.isNotEmpty() || isSetupMode || easyInstall) {
         isoUris.forEachIndexed { index, uri ->
             cmd.add("-drive")
-            cmd.add("file=$uri,format=raw,if=none,id=cd$index,readonly=on,cache=unsafe,aio=threads")
+            cmd.add("file=$uri,format=raw,if=none,id=cd$index,readonly=on,cache=unsafe,aio=threads,discard=on")
             cmd.add("-device")
-            cmd.add("scsi-cd,drive=cd$index,bootindex=$index")
+            cmd.add("scsi-cd,drive=cd$index,bus=scsi0.0,bootindex=$index")
         }
+    }
+
+    if (isTpmEnabled && tpmSockPath != null) {
+        cmd.add("-chardev")
+        cmd.add("socket,id=chrtpm,path=$tpmSockPath")
+        cmd.add("-tpmdev")
+        cmd.add("emulator,id=tpm0,chardev=chrtpm")
+        cmd.add("-device")
+        val tpmDevice = if (cpuModel.getArch() == "aarch64") "tpm-tis-device" else "tpm-tis"
+        cmd.add("$tpmDevice,tpmdev=tpm0")
     }
 
     disks.forEachIndexed { index, disk ->
@@ -130,8 +141,10 @@ fun VirtualMachineSettings.buildFullCommand(isSetupMode: Boolean = false): List<
         val isArm = cpuModel.getArch() == "aarch64"
         val isWindows = osType == OsType.WINDOWS
 
-        if (isWindows && diskInterface == DiskInterface.NVME) {
-            cmd.add("nvme,drive=$driveId,serial=virtio-disk$index,bootindex=${isoUris.size + 10 + index}")
+        if (diskInterface == DiskInterface.NVME) {
+            cmd.add("nvme,id=nvme$index,serial=nvme-disk$index")
+            cmd.add("-device")
+            cmd.add("nvme-ns,drive=$driveId,bus=nvme$index,nsid=1,bootindex=${isoUris.size + 10 + index}")
         } else {
             val vectors = cpuCores * 2 + 2
             val packed = if (isTitanModeEnabled) ",packed=on" else ""

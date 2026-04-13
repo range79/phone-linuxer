@@ -24,6 +24,7 @@ class EmulatorExecutor(private val context: Context) {
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
     private var wakeLock: PowerManager.WakeLock? = null
 
+    private val swtpmProcesses = ConcurrentHashMap<String, Process>()
     private val libLinker = LibLinker(context)
     val downloader = EngineDownloader(context)
     val extractor = EngineExtractor(context)
@@ -80,24 +81,10 @@ class EmulatorExecutor(private val context: Context) {
             val pb = ProcessBuilder(cmd)
             val env = pb.environment()
             
-            val nativeLibDir = context.applicationInfo.nativeLibraryDir
-            env["LD_LIBRARY_PATH"] = "${injectLibDir.absolutePath}:${context.filesDir.absolutePath}:$nativeLibDir:/system/lib64:/vendor/lib64"
+            val linkerEnv = libLinker.getEnvironment()
+            env.putAll(linkerEnv)
             
-            val preloads = mutableListOf<String>()
-            val criticalLibs = listOf(
-                "libz.so.1", "libz.so",
-                "libnettle.so.8", "libnettle.so",
-                "libhogweed.so.6", "libhogweed.so",
-                "libgmp.so",
-                "libidn2.so", "libunistring.so",
-                "libgnutls.so.30", "libgnutls.so",
-                "libglib-2.0.so.0", "libglib-2.0.so"
-            )
-            criticalLibs.forEach { name ->
-                val f = File(injectLibDir, name)
-                if (f.exists()) preloads.add(f.absolutePath)
-            }
-            if (preloads.isNotEmpty()) env["LD_PRELOAD"] = preloads.joinToString(":")
+            env["LD_LIBRARY_PATH"] = "${env["LD_LIBRARY_PATH"]}:/system/lib64:/vendor/lib64"
 
             val process = pb.start()
             val exitCode = process.waitFor()
@@ -116,12 +103,31 @@ class EmulatorExecutor(private val context: Context) {
         vmId: String,
         fullCommand: List<String>,
         isTurboEnabled: Boolean = false,
+        isTpmEnabled: Boolean = false,
+        tpmSockPath: String? = null,
         onExit: ((Int) -> Unit)? = null
     ): Result<Long> = withContext(Dispatchers.IO) {
         if (isAlive(vmId)) return@withContext Result.failure(Exception("Already running"))
 
         try {
             libLinker.injectAndLink()
+
+            if (isTpmEnabled && tpmSockPath != null) {
+                launchSwtpm(vmId, tpmSockPath)
+                
+                val socketFile = File(tpmSockPath)
+                var attempts = 0
+                while (!socketFile.exists() && attempts < 20) {
+                    delay(100)
+                    attempts++
+                }
+                
+                if (!socketFile.exists()) {
+                    Timber.tag(TAG).e("TPM socket failed to initialize at $tpmSockPath")
+                } else {
+                    Timber.tag(TAG).d("TPM socket ready after ${attempts * 100}ms")
+                }
+            }
 
             val qemuInFilesDir = File(context.filesDir, "libqemu_system.so")
             val qemuInNativeDir = File(context.applicationInfo.nativeLibraryDir, "libqemu_system.so")
@@ -148,36 +154,9 @@ class EmulatorExecutor(private val context: Context) {
             val pb = ProcessBuilder(patchedCommand)
             val env = pb.environment()
 
-            val nativeLibDir = context.applicationInfo.nativeLibraryDir
-            val injectLibDir = libLinker.injectLibDir
-            
-            val ldPath = "${injectLibDir.absolutePath}:${context.filesDir.absolutePath}:$nativeLibDir:/system/lib64:/vendor/lib64"
-            env["LD_LIBRARY_PATH"] = ldPath
-
-            val preloads = mutableListOf<String>()
-            val criticalLibs = listOf(
-                "libz.so.1", "libz.so",
-                "libnettle.so.8", "libnettle.so",
-                "libhogweed.so.6", "libhogweed.so",
-                "libgmp.so",
-                "libidn2.so", "libunistring.so",
-                "libgnutls.so.30", "libgnutls.so",
-                "libglib-2.0.so.0", "libglib-2.0.so",
-                "libpcre2-8.so.0", "libpcre2-8.so",
-                "libgthread-2.0.so.0", "libgthread-2.0.so",
-                "libcurl.so", "libssh.so",
-                "libzstd.so.1", "libzstd.so",
-                "libbz2.so.1.0", "libbz2.so"
-            )
-
-            criticalLibs.forEach { name ->
-                val file = File(injectLibDir, name)
-                if (file.exists()) preloads.add(file.absolutePath)
-            }
-
-            if (preloads.isNotEmpty()) {
-                env["LD_PRELOAD"] = preloads.joinToString(":")
-            }
+            val linkerEnv = libLinker.getEnvironment()
+            env.putAll(linkerEnv)
+            env["LD_LIBRARY_PATH"] = "${env["LD_LIBRARY_PATH"]}:/system/lib64:/vendor/lib64"
 
             env["PROOT_TMP_DIR"] = context.cacheDir.absolutePath
             env["TMPDIR"] = context.cacheDir.absolutePath
@@ -300,6 +279,11 @@ class EmulatorExecutor(private val context: Context) {
     fun killProcess(vmId: String) {
         try {
             logJobs[vmId]?.cancel()
+            
+            swtpmProcesses[vmId]?.let {
+                try { it.destroy() } catch (_: Throwable) {}
+            }
+            
             val process = runningProcesses[vmId]
             if (process != null) {
                 try { process.destroy() } catch (t: Throwable) {}
@@ -322,9 +306,70 @@ class EmulatorExecutor(private val context: Context) {
 
     fun hasRunningProcesses(): Boolean = runningProcesses.isNotEmpty()
 
+    private fun launchSwtpm(vmId: String, sockPath: String) {
+        val swtpmBinary = File(context.applicationInfo.nativeLibraryDir, "libswtpm.so")
+        if (!swtpmBinary.exists()) {
+            Timber.e("swtpm binary not found at ${swtpmBinary.absolutePath}")
+            return
+        }
+        swtpmBinary.setExecutable(true, false)
+
+        val tpmStateDir = File(context.filesDir, "tpm/$vmId")
+        tpmStateDir.mkdirs()
+
+        val injectLibDir = libLinker.injectLibDir
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        val ldPath = "${injectLibDir.absolutePath}:${context.filesDir.absolutePath}:$nativeLibDir:/system/lib64:/vendor/lib64"
+
+        val cmd = mutableListOf<String>().apply {
+            val linker = if (System.getProperty("os.arch")?.contains("64") == true) "/system/bin/linker64" else "/system/bin/linker"
+            add(linker)
+            add(swtpmBinary.absolutePath)
+            add("socket")
+            add("--tpmstate")
+            add("dir=${tpmStateDir.absolutePath}")
+            add("--ctrl")
+            add("type=unixio,path=$sockPath")
+            add("--tpm2")
+            add("--log")
+            add("level=20")
+        }
+
+        val pb = ProcessBuilder(cmd)
+        pb.redirectErrorStream(true)
+        val env = pb.environment()
+        
+        env["LD_LIBRARY_PATH"] = ldPath
+        env["TMPDIR"] = context.cacheDir.absolutePath
+        env["HOME"] = context.filesDir.absolutePath
+        
+        try {
+            val process = pb.start()
+            swtpmProcesses[vmId] = process
+            
+            executorScope.launch {
+                process.inputStream.bufferedReader().use { reader ->
+                    reader.forEachLine { line ->
+                        Timber.tag("SWTPM_$vmId").d(line)
+                    }
+                }
+                val exitCode = process.waitFor()
+                Timber.tag("SWTPM_$vmId").e("Process exited with code: $exitCode")
+            }
+            Timber.tag(TAG).d("Started swtpm for $vmId at $sockPath")
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Failed to launch swtpm")
+        }
+    }
+
     private fun cleanup(vmId: String) {
         runningProcesses.remove(vmId)
         logJobs.remove(vmId)
+        
+        swtpmProcesses[vmId]?.let {
+            try { it.destroy() } catch (_: Throwable) {}
+            swtpmProcesses.remove(vmId)
+        }
         
         if (runningProcesses.isEmpty()) {
             wakeLock?.let {

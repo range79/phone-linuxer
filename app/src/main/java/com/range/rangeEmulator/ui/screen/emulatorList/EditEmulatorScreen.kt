@@ -103,6 +103,7 @@ fun EditEmulatorScreen(
     var selectedScreenType by remember { mutableStateOf(ScreenType.VNC) }
     var isTitanModeEnabled by remember { mutableStateOf(false) }
     var selectedDiskInterface by remember { mutableStateOf(DiskInterface.NVME) }
+    var isTpmEnabled by remember { mutableStateOf(false) }
     var showTitanWarning by remember { mutableStateOf(false) }
     val maxTbSize = remember { (deviceMaxRam - 512).coerceAtLeast(256) }
     val tbSafeLimit = remember { deviceMaxRam / 3 }
@@ -130,6 +131,7 @@ fun EditEmulatorScreen(
             selectedIsos = vm.isoUris.map { Uri.parse(it) }
             isTitanModeEnabled = vm.isTitanModeEnabled
             selectedDiskInterface = vm.diskInterface
+            isTpmEnabled = vm.isTpmEnabled
             diskList.clear()
             diskList.addAll(vm.disks)
         }
@@ -153,7 +155,8 @@ fun EditEmulatorScreen(
             isoUris = selectedIsos.map { it.toString() },
             disks = diskList.toList(),
             diskInterface = selectedDiskInterface,
-            isTitanModeEnabled = isTitanModeEnabled
+            isTitanModeEnabled = isTitanModeEnabled,
+            isTpmEnabled = isTpmEnabled
         )?.let { onSave(it) }
     }
 
@@ -327,27 +330,25 @@ fun EditEmulatorScreen(
 
             SectionHeader("Storage Management")
             
-            if (selectedOsType == OsType.WINDOWS) {
-                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("Disk Controller (Windows Only)", fontWeight = FontWeight.Bold)
-                        Text(
-                            text = if (selectedDiskInterface == DiskInterface.NVME) 
-                                "NVMe: Compatible & Easy. No extra drivers needed." 
-                                else "VirtIO: Maximum Speed. Requires loading drivers manually.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DiskInterface.entries.forEach { iface ->
-                                FilterChip(
-                                    selected = selectedDiskInterface == iface,
-                                    onClick = { selectedDiskInterface = iface },
-                                    label = { Text(iface.name) },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Disk Controller", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (selectedDiskInterface == DiskInterface.NVME) 
+                            "NVMe: Compatible & Easy. No extra drivers needed." 
+                            else "VirtIO: Maximum Speed. Requires loading drivers manually.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DiskInterface.entries.forEach { iface ->
+                            FilterChip(
+                                selected = selectedDiskInterface == iface,
+                                onClick = { selectedDiskInterface = iface },
+                                label = { Text(iface.name) },
+                                modifier = Modifier.weight(1f)
+                             )
                         }
                     }
                 }
@@ -512,6 +513,21 @@ fun EditEmulatorScreen(
                         checked = isTitanModeEnabled,
                         onCheckedChange = { if (it) showTitanWarning = true else isTitanModeEnabled = false },
                         colors = SwitchDefaults.colors(checkedThumbColor = Color.Red, checkedTrackColor = Color.Red.copy(alpha = 0.5f))
+                    )
+                }
+            }
+            
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("TPM 2.0 SUPPORT", fontWeight = FontWeight.ExtraBold)
+                        Text("Enable virtual TPM. Required for Windows 11.", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Switch(
+                        checked = isTpmEnabled,
+                        onCheckedChange = { isTpmEnabled = it }
                     )
                 }
             }

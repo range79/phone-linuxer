@@ -105,12 +105,10 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                 var spiceToTry = safeSettings.spicePort
                 var sshToTry = safeSettings.sshPort
 
-                // Avoid ports used by other VMs in repository
                 while (activeVms.any { it.vncPort == vncToTry }) vncToTry++
                 while (activeVms.any { it.spicePort == spiceToTry }) spiceToTry++
                 while (activeVms.any { it.sshPort == sshToTry }) sshToTry++
 
-                // Ensure ports are actually available on the device and unique from each other
                 val finalVnc = com.range.rangeEmulator.util.PortUtil.findAvailablePort(vncToTry)
                 val finalSpice = com.range.rangeEmulator.util.PortUtil.findAvailablePort(maxOf(spiceToTry, finalVnc + 1))
                 val finalSsh = com.range.rangeEmulator.util.PortUtil.findAvailablePort(maxOf(sshToTry, finalSpice + 1))
@@ -136,10 +134,18 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
 
                 startKeepAliveService()
 
+                val tpmSockPath = if (safeSettings.isTpmEnabled) {
+                    val tpmCacheDir = java.io.File(getApplication<Application>().cacheDir, "tpm/${safeSettings.id}")
+                    if (!tpmCacheDir.exists()) tpmCacheDir.mkdirs()
+                    java.io.File(tpmCacheDir, "swtpm.sock").absolutePath
+                } else null
+
                 val result = executor.executeCommand(
                     vmId = safeSettings.id,
-                    fullCommand = safeSettings.buildFullCommand(),
-                    isTurboEnabled = safeSettings.isTurboEnabled
+                    fullCommand = safeSettings.buildFullCommand(tpmSockPath = tpmSockPath),
+                    isTurboEnabled = safeSettings.isTurboEnabled,
+                    isTpmEnabled = safeSettings.isTpmEnabled,
+                    tpmSockPath = tpmSockPath
                 ) { exitCode ->
                     viewModelScope.launch {
                         val currentState = vms.value.find { it.id == safeSettings.id }?.state
