@@ -43,6 +43,7 @@ data class VirtualMachineSettings(
     val isTurboEnabled: Boolean = true,
     val isTitanModeEnabled: Boolean = false,
     val isTpmEnabled: Boolean = false,
+    val arch: Architecture = Architecture.AARCH64,
     val sshPort: Int = 2222,
     val createdAt: Long = System.currentTimeMillis(),
     val state: VmState = VmState.INACTIVE,
@@ -59,7 +60,7 @@ fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetup
     }
 
     cmd.add("-machine")
-    if (cpuModel.getArch() == "aarch64") {
+    if (arch == Architecture.AARCH64) {
         val gic = if (isTitanModeEnabled) "3" else "max"
         cmd.add("virt,gic-version=$gic,its=on,highmem=on")
     } else {
@@ -73,7 +74,7 @@ fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetup
     val cpuParam = if (cpuModel == CpuModel.HOST) "host" else cpuModel.toQemuParam()
     if (cpuModel == CpuModel.HOST && isTurboEnabled) {
         cmd.add("$cpuParam,pmu=on,lse=on,host-cache-info=on,l3-cache=on")
-    } else if (cpuModel.getArch() == "aarch64" && cpuModel == CpuModel.MAX) {
+    } else if (arch == Architecture.AARCH64 && cpuModel == CpuModel.MAX) {
         val pauth = if (osType == OsType.WINDOWS) ",pauth=on" else ""
         cmd.add("$cpuParam$pauth")
     } else {
@@ -126,7 +127,7 @@ fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetup
         cmd.add("-tpmdev")
         cmd.add("emulator,id=tpm0,chardev=chrtpm")
         cmd.add("-device")
-        val tpmDevice = if (cpuModel.getArch() == "aarch64") "tpm-tis-device" else "tpm-tis"
+        val tpmDevice = if (arch == Architecture.AARCH64) "tpm-tis-device" else "tpm-tis"
         cmd.add("$tpmDevice,tpmdev=tpm0")
     }
 
@@ -138,7 +139,7 @@ fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetup
         cmd.add("file=${disk.path},format=$formatName,if=none,id=$driveId,cache=$cacheMode,discard=on,detect-zeroes=on,aio=threads")
         
         cmd.add("-device")
-        val isArm = cpuModel.getArch() == "aarch64"
+        val isArm = arch == Architecture.AARCH64
         val isWindows = osType == OsType.WINDOWS
 
         if (diskInterface == DiskInterface.NVME) {
@@ -176,7 +177,7 @@ fun VirtualMachineSettings.buildFullCommand(tpmSockPath: String? = null, isSetup
         "base=utc,clock=host,driftfix=none"
     } else if (isTurboEnabled) {
         "base=utc,clock=host"
-    } else if (cpuModel.getArch() == "aarch64") {
+    } else if (arch == Architecture.AARCH64) {
         "base=utc,clock=rt"
     } else {
         "base=utc,clock=rt,driftfix=slew"
@@ -215,7 +216,7 @@ private fun VirtualMachineSettings.getNetworkArgs(): List<String> {
 private fun VirtualMachineSettings.getDisplayArgs(): List<String> {
     val args = mutableListOf<String>()
 
-    val isArm = cpuModel.getArch() == "aarch64"
+    val isArm = arch == Architecture.AARCH64
     
     if (isGpuEnabled) {
         if (osType == OsType.WINDOWS && isArm) {
@@ -241,11 +242,10 @@ private fun VirtualMachineSettings.getDisplayArgs(): List<String> {
     args.add("-display")
     args.add("none")
 
-    val arch = cpuModel.getArch()
+    val qemuArch = arch.toQemuArch()
     val biosFile = when (arch) {
-        "aarch64" -> "edk2-aarch64-code.fd"
-        "x86_64" -> "edk2-x86_64-code.fd"
-        else -> "edk2-i386-code.fd"
+        Architecture.AARCH64 -> "edk2-aarch64-code.fd"
+        Architecture.X86_64 -> "edk2-x86_64-code.fd"
     }
     args.add("-bios")
     args.add(biosFile)

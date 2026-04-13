@@ -47,6 +47,7 @@ fun AddNewEmulatorScreen(
 
     var vmName by remember { mutableStateOf("") }
     var selectedOsType by remember { mutableStateOf(OsType.LINUX) }
+    var selectedArch by remember { mutableStateOf(Architecture.AARCH64) }
     var selectedCpu by remember { mutableStateOf(if (hasKvmSupport) CpuModel.HOST else CpuModel.MAX) }
     var ramAmount by remember { mutableStateOf((deviceMaxRam / 4f).coerceIn(512f, deviceMaxRam.toFloat())) }
     var cpuCores by remember { mutableStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
@@ -141,7 +142,8 @@ fun AddNewEmulatorScreen(
             easyInstall = isEasyInstallEnabled,
             easyInstallSettings = if (isEasyInstallEnabled) {
                 EasyInstallSettings(ezUsername, ezPassword, selectedDE)
-            } else null
+            } else null,
+            arch = selectedArch
         ))
     }
 
@@ -315,8 +317,25 @@ fun AddNewEmulatorScreen(
                 leadingIcon = { Icon(Icons.Default.Label, null) }
             )
 
-            SectionHeader("Operating System")
-            OsSelector(selectedOs = selectedOsType, onOsSelected = { selectedOsType = it })
+            SectionHeader("Core Configuration")
+            SystemConfigPanel(
+                selectedOs = selectedOsType,
+                selectedArch = selectedArch,
+                selectedCpu = selectedCpu,
+                isTpmEnabled = isTpmEnabled,
+                hasKvm = hasKvmSupport,
+                onOsSelected = { selectedOsType = it },
+                onArchSelected = { arch ->
+                    selectedArch = arch
+                    selectedCpu = if (arch == Architecture.AARCH64) {
+                        if (hasKvmSupport) CpuModel.HOST else CpuModel.MAX
+                    } else {
+                        CpuModel.QEMU64
+                    }
+                },
+                onCpuSelected = { selectedCpu = it },
+                onTpmSelected = { isTpmEnabled = it }
+            )
 
             SectionHeader("Storage Management")
             
@@ -474,79 +493,6 @@ fun AddNewEmulatorScreen(
                 }
             }
             
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("TPM 2.0 SUPPORT", fontWeight = FontWeight.ExtraBold)
-                        Text("Enable virtual TPM. Required for Windows 11.", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Switch(
-                        checked = isTpmEnabled,
-                        onCheckedChange = { isTpmEnabled = it }
-                    )
-                }
-            }
-
-            var cpuExpanded by remember { mutableStateOf(false) }
-            val isKvmMissingForHost = selectedCpu == CpuModel.HOST && !hasKvmSupport
-
-            ExposedDropdownMenuBox(
-                expanded = cpuExpanded,
-                onExpandedChange = { cpuExpanded = !cpuExpanded }
-            ) {
-                OutlinedTextField(
-                    value = if (isKvmMissingForHost) "${selectedCpu.name} (Unsupported)" else selectedCpu.name,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("CPU Model") },
-                    supportingText = {
-                        if (isKvmMissingForHost) {
-                            Text("KVM is not supported on this device!", color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Text(selectedCpu.getModeDescription())
-                        }
-                    },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = cpuExpanded) },
-                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, true).fillMaxWidth(),
-                    isError = isKvmMissingForHost,
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                ExposedDropdownMenu(
-                    expanded = cpuExpanded,
-                    onDismissRequest = { cpuExpanded = false }
-                ) {
-                    CpuModel.entries.forEach { cpu ->
-                        val requiresKvm = cpu == CpuModel.HOST
-                        val isSupported = !requiresKvm || hasKvmSupport
-
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(
-                                        text = if (!isSupported) "${cpu.name} (KVM Required)" else cpu.name,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (!isSupported) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(cpu.getModeDescription(), style = MaterialTheme.typography.bodySmall)
-                                }
-                            },
-                            onClick = {
-                                if (isSupported) {
-                                    selectedCpu = cpu
-                                    cpuExpanded = false
-                                } else {
-                                    Toast.makeText(context, "Your device lacks KVM support for HOST mode.", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            enabled = isSupported
-                        )
-                    }
-                }
-            }
-
             SettingSlider(
                 title = "RAM: ${ramAmount.toInt()} / $deviceMaxRam MB", 
                 value = ramAmount, 

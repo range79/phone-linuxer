@@ -20,14 +20,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import com.range.rangeEmulator.data.enums.*
 import com.range.rangeEmulator.data.model.*
 import com.range.rangeEmulator.ui.screen.addNewEmulator.CpuModelDropdown
 import com.range.rangeEmulator.ui.screen.addNewEmulator.ISOListItem
 import com.range.rangeEmulator.ui.screen.addNewEmulator.KvmStatusCard
-import com.range.rangeEmulator.ui.screen.addNewEmulator.OsSelector
 import com.range.rangeEmulator.ui.screen.addNewEmulator.SectionHeader
+import com.range.rangeEmulator.ui.screen.addNewEmulator.SystemConfigPanel
 import com.range.rangeEmulator.ui.screen.addNewEmulator.SettingSlider
 import com.range.rangeEmulator.util.HardwareUtil
 import com.range.rangeEmulator.viewModel.EmulatorViewModel
@@ -55,6 +56,7 @@ fun EditEmulatorScreen(
     var cpuCores by remember { mutableFloatStateOf((deviceMaxCores / 2f).coerceAtLeast(1f)) }
     var isGpuEnabled by remember { mutableStateOf(true) }
     var selectedOsType by remember { mutableStateOf(OsType.LINUX) }
+    var selectedArch by remember { mutableStateOf(Architecture.AARCH64) }
     var selectedIsos by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val diskList = remember { mutableStateListOf<DiskConfig>() }
     var showAddDiskDialog by remember { mutableStateOf(false) }
@@ -132,6 +134,7 @@ fun EditEmulatorScreen(
             isTitanModeEnabled = vm.isTitanModeEnabled
             selectedDiskInterface = vm.diskInterface
             isTpmEnabled = vm.isTpmEnabled
+            selectedArch = vm.arch
             diskList.clear()
             diskList.addAll(vm.disks)
         }
@@ -156,7 +159,8 @@ fun EditEmulatorScreen(
             disks = diskList.toList(),
             diskInterface = selectedDiskInterface,
             isTitanModeEnabled = isTitanModeEnabled,
-            isTpmEnabled = isTpmEnabled
+            isTpmEnabled = isTpmEnabled,
+            arch = selectedArch
         )?.let { onSave(it) }
     }
 
@@ -325,8 +329,27 @@ fun EditEmulatorScreen(
                 leadingIcon = { Icon(Icons.Default.Label, null) }
             )
 
-            SectionHeader("Operating System")
-            OsSelector(selectedOs = selectedOsType, onOsSelected = { selectedOsType = it })
+            SectionHeader("Core Configuration")
+            SystemConfigPanel(
+                selectedOs = selectedOsType,
+                selectedArch = selectedArch,
+                selectedCpu = selectedCpu,
+                isTpmEnabled = isTpmEnabled,
+                hasKvm = hasKvmSupport,
+                onOsSelected = { selectedOsType = it },
+                onArchSelected = { arch ->
+                    selectedArch = arch
+                    if (selectedCpu.getArch() != arch.toQemuArch()) {
+                        selectedCpu = if (arch == Architecture.AARCH64) {
+                            if (hasKvmSupport) CpuModel.HOST else CpuModel.MAX
+                        } else {
+                            CpuModel.QEMU64
+                        }
+                    }
+                },
+                onCpuSelected = { selectedCpu = it },
+                onTpmSelected = { isTpmEnabled = it }
+            )
 
             SectionHeader("Storage Management")
             
@@ -492,11 +515,8 @@ fun EditEmulatorScreen(
                 ) {
                     Icon(Icons.Default.Bolt, null)
                     Spacer(Modifier.width(4.dp))
-                    Text("Max Performance Preset")
                 }
             }
-            KvmStatusCard(hasKvmSupport)
-
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.outlinedCardColors(
@@ -516,27 +536,6 @@ fun EditEmulatorScreen(
                     )
                 }
             }
-            
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("TPM 2.0 SUPPORT", fontWeight = FontWeight.ExtraBold)
-                        Text("Enable virtual TPM. Required for Windows 11.", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Switch(
-                        checked = isTpmEnabled,
-                        onCheckedChange = { isTpmEnabled = it }
-                    )
-                }
-            }
-
-            CpuModelDropdown(
-                selectedModel = selectedCpu,
-                hasKvm = hasKvmSupport,
-                onModelSelected = { selectedCpu = it }
-            )
 
             SettingSlider(
                 title = "RAM: ${ramAmount.toInt()} MB",
@@ -617,6 +616,7 @@ fun EditEmulatorScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary
             )
+
             Spacer(Modifier.height(32.dp))
         }
     }

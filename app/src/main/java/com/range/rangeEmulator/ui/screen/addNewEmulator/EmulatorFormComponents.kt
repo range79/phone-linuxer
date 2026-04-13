@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Window
@@ -38,6 +41,8 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,6 +57,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.range.rangeEmulator.data.enums.Architecture
 import com.range.rangeEmulator.data.enums.CpuModel
 import com.range.rangeEmulator.data.enums.OsType
 
@@ -131,6 +137,7 @@ fun getCpuDescription(model: CpuModel): String = when (model) {
 fun CpuModelDropdown(
     selectedModel: CpuModel,
     hasKvm: Boolean,
+    arch: Architecture = Architecture.AARCH64,
     onModelSelected: (CpuModel) -> Unit
 ) {
     val context = LocalContext.current
@@ -157,7 +164,7 @@ fun CpuModelDropdown(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            CpuModel.entries.forEach { model ->
+            CpuModel.entries.filter { it.getArch() == arch.toQemuArch() }.forEach { model ->
                 val isUnsupported = model.requiresKvm() && !hasKvm
 
                 DropdownMenuItem(
@@ -191,21 +198,116 @@ fun CpuModelDropdown(
 }
 
 @Composable
-fun OsSelector(
+fun SystemConfigPanel(
     selectedOs: OsType,
-    onOsSelected: (OsType) -> Unit
+    selectedArch: Architecture,
+    selectedCpu: CpuModel,
+    isTpmEnabled: Boolean,
+    hasKvm: Boolean,
+    onOsSelected: (OsType) -> Unit,
+    onArchSelected: (Architecture) -> Unit,
+    onCpuSelected: (CpuModel) -> Unit,
+    onTpmSelected: (Boolean) -> Unit
 ) {
-    Row(
+    OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        shape = RoundedCornerShape(24.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        OsType.entries.forEach { os ->
-            OsCard(
-                os = os,
-                isSelected = selectedOs == os,
-                onClick = { onOsSelected(os) },
-                modifier = Modifier.weight(1f)
-            )
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Text("System Configuration", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OsType.entries.forEach { os ->
+                    OsCard(
+                        os = os,
+                        isSelected = selectedOs == os,
+                        onClick = { onOsSelected(os) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Target Architecture", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Architecture.entries.forEach { arch ->
+                        val isSelected = selectedArch == arch
+                        Surface(
+                            onClick = { onArchSelected(arch) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 10.dp)
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (arch == Architecture.AARCH64) Icons.Default.Memory else Icons.Default.Computer,
+                                        null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        arch.toString().substringBefore(" ("),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Processor Model", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                CpuModelDropdown(
+                    selectedModel = selectedCpu,
+                    hasKvm = hasKvm,
+                    arch = selectedArch,
+                    onModelSelected = onCpuSelected
+                )
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("TPM 2.0 Security", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                        Text("Required for Windows 11 features.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isTpmEnabled,
+                        onCheckedChange = onTpmSelected
+                    )
+                }
+            }
         }
     }
 }

@@ -145,7 +145,8 @@ class EmulatorViewModel(application: Application) : AndroidViewModel(application
                     fullCommand = safeSettings.buildFullCommand(tpmSockPath = tpmSockPath),
                     isTurboEnabled = safeSettings.isTurboEnabled,
                     isTpmEnabled = safeSettings.isTpmEnabled,
-                    tpmSockPath = tpmSockPath
+                    tpmSockPath = tpmSockPath,
+                    arch = safeSettings.arch
                 ) { exitCode ->
                     viewModelScope.launch {
                         val currentState = vms.value.find { it.id == safeSettings.id }?.state

@@ -3,6 +3,7 @@ package com.range.rangeEmulator.data.executor
 import android.content.Context
 import android.os.Build
 import android.os.PowerManager
+import com.range.rangeEmulator.data.enums.Architecture
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -105,6 +106,7 @@ class EmulatorExecutor(private val context: Context) {
         isTurboEnabled: Boolean = false,
         isTpmEnabled: Boolean = false,
         tpmSockPath: String? = null,
+        arch: Architecture = Architecture.AARCH64,
         onExit: ((Int) -> Unit)? = null
     ): Result<Long> = withContext(Dispatchers.IO) {
         if (isAlive(vmId)) return@withContext Result.failure(Exception("Already running"))
@@ -129,15 +131,20 @@ class EmulatorExecutor(private val context: Context) {
                 }
             }
 
-            val qemuInFilesDir = File(context.filesDir, "libqemu_system.so")
-            val qemuInNativeDir = File(context.applicationInfo.nativeLibraryDir, "libqemu_system.so")
+            val qemuArch = arch.toQemuArch()
+            val archBinaryName = "libqemu_system_$qemuArch.so"
+            
+            val qemuInFilesDir = File(context.filesDir, archBinaryName)
+            val qemuInNativeDir = File(context.applicationInfo.nativeLibraryDir, archBinaryName)
+            val fallbackFilesDir = File(context.filesDir, "libqemu_system.so")
+            val fallbackNativeDir = File(context.applicationInfo.nativeLibraryDir, "libqemu_system.so")
+            
             val qemuBinary = when {
-                qemuInNativeDir.exists() -> {
-                    if (qemuInFilesDir.exists()) qemuInFilesDir.delete()
-                    qemuInNativeDir
-                }
+                qemuInNativeDir.exists() -> qemuInNativeDir
                 qemuInFilesDir.exists() -> qemuInFilesDir
-                else -> throw Exception("QEMU engine not found. Please download the engine first.")
+                fallbackNativeDir.exists() -> fallbackNativeDir
+                fallbackFilesDir.exists() -> fallbackFilesDir
+                else -> throw Exception("QEMU engine for $qemuArch not found. Please download the engine first.")
             }
             qemuBinary.setExecutable(true, false)
 
